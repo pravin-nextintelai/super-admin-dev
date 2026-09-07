@@ -142,3 +142,6 @@ vite.config.ts.timestamp-*
 # Ignore specific docs
 Jurinex_voice_docs.md
 DEPLOYMENT.md
+
+# Local Claude / Cursor agent settings — do not push
+.claude/
