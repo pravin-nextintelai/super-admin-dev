@@ -1,8 +1,9 @@
 // Plan-centric analytics — STRICTLY READ-ONLY (SELECT only; never mutates any table).
 // "How many users bought each plan" + drill-in lists of those users.
-//   monthly → subscribers from user_subscriptions.monthly_plan_id
+//   monthly → subscribers from user_subscriptions.monthly_plan_id + paid amount from payments
 //   topup   → buyers from user_token_topup_purchases.topup_plan_id
-//   addon   → catalog only (no per-user purchase table yet → tracked:false)
+//   addon   → buyers from user_storage_addon_purchases
+//   totals  → paid users + income across monthly/topup/addon
 // pools = { authPool, paymentPool }.
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -184,9 +185,33 @@ exports.getSummary = async (req, res, pools) => {
                 error: e.message,
             };
         }
+        const finance = await queryPaidTotals(pools.paymentPool);
+        const totalSubscriptions = monthly.rows.reduce((s, m) => s + num(m.subscribers), 0);
+        const activeSubscribers = monthly.rows.reduce((s, m) => s + num(m.active_subscribers), 0);
         return res.status(200).json({
             success: true,
-            data: { monthly: monthly.rows, topup: topup.rows, addons },
+            data: {
+                monthly: monthly.rows,
+                topup: topup.rows,
+                addons,
+                totals: {
+                    currency: 'INR',
+                    total_subscriptions: totalSubscriptions,
+                    active_subscribers: activeSubscribers,
+                    paid_users: finance.paid_users,
+                    monthly_revenue: finance.monthly_revenue,
+                    monthly_paid_users: finance.monthly_paid_users,
+                    monthly_paid_count: finance.monthly_paid_count,
+                    topup_revenue: finance.topup_revenue,
+                    topup_paid_users: finance.topup_paid_users,
+                    topup_paid_count: finance.topup_paid_count,
+                    addon_revenue: finance.addon_revenue,
+                    addon_paid_users: finance.addon_paid_users,
+                    addon_paid_count: finance.addon_paid_count,
+                    total_income: finance.total_income,
+                    ...(finance.error ? { error: finance.error } : {}),
+                },
+            },
         });
     } catch (e) {
         return res.status(500).json({ success: false, message: e.message });
