@@ -218,7 +218,7 @@ const PlanAnalytics = () => {
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead><tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
-                      <th className="px-3 py-2 text-left">Plan</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Price</th><th className="px-3 py-2 text-right">Subscribers</th><th className="px-3 py-2 text-right">Active</th>
+                      <th className="px-3 py-2 text-left">Plan</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Price</th><th className="px-3 py-2 text-right">Subscribers</th><th className="px-3 py-2 text-right">Active</th><th className="px-3 py-2 text-right">Paid users</th><th className="px-3 py-2 text-right">Revenue</th>
                     </tr></thead>
                     <tbody>
                       {monthly.map((m) => (
@@ -229,6 +229,8 @@ const PlanAnalytics = () => {
                           <td className="px-3 py-2 text-right text-slate-600">{Number(m.price) > 0 ? fmtINR(m.price) : 'Free'}</td>
                           <td className="px-3 py-2 text-right font-semibold text-slate-800">{fmtNum(m.subscribers)}</td>
                           <td className="px-3 py-2 text-right text-emerald-700">{fmtNum(m.active_subscribers)}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{fmtNum(m.paid_users)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-emerald-700">{Number(m.revenue) > 0 ? fmtINR(m.revenue) : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
