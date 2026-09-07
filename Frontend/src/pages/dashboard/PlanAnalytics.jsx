@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import {
-  ArrowLeft, RefreshCw, BarChart3, Repeat, Package, HardDrive, Users, CreditCard, AlertTriangle, X, Eye, Lock,
+  ArrowLeft, RefreshCw, BarChart3, Repeat, Package, HardDrive, Users, CreditCard, AlertTriangle, X, Eye, Lock, DollarSign,
 } from 'lucide-react';
 import { COLORS, fmtINR, fmtNum, fmtBytes, fmtDate } from './userAnalytics/analyticsFormat';
 import { KpiCard, ChartCard, EmptyState, Donut, StatusPill } from './userAnalytics/AnalyticsCharts';
@@ -55,6 +55,7 @@ const PlanAnalytics = () => {
   const topup = summary?.topup || [];
   const addonInfo = summary?.addons || {};
   const addonPlans = addonInfo.plans || [];
+  const totals = summary?.totals || {};
 
   const UserCell = ({ r }) => (
     <div className="flex flex-col">
