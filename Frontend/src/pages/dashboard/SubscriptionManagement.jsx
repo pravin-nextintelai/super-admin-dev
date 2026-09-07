@@ -517,7 +517,16 @@ const SubscriptionManagement = () => {
       setMonthly(Array.isArray(m.data) ? m.data : []);
       setTopup(Array.isArray(t.data) ? t.data : []);
       setAddon(Array.isArray(a.data) ? a.data : []);
+      subscriptionLogger.flow('catalog:loaded', {
+        summary: {
+          monthly: Array.isArray(m.data) ? m.data.length : 0,
+          topup: Array.isArray(t.data) ? t.data.length : 0,
+          addon: Array.isArray(a.data) ? a.data.length : 0,
+          canMutate,
+        },
+      });
     } catch (e) {
+      subscriptionLogger.error('catalog:failed', e);
       toast.add(e.message || 'Failed to load plans', 'error');
     } finally { setLoading(false); }
   }, []); // eslint-disable-line
