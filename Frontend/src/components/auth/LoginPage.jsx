@@ -231,8 +231,19 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Eye, EyeOff, Lock, Mail, Shield, User, AlertCircle, CheckCircle } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
+import { createDebugLogger } from '../../utils/debugLogger';
 
 const LOGIN_URL = `${API_BASE_URL}/auth/login`;
+const loginLogger = createDebugLogger('AuthLogin');
+
+const ROLE_HOME = {
+  'marketing-admin': '/dashboard/demo-bookings',
+  'finance-admin': '/dashboard/subscriptions/analytics',
+  'account-admin': '/dashboard/subscriptions',
+  'user-admin': '/dashboard/users',
+  'support-admin': '/dashboard/support',
+  'super-admin': '/dashboard',
+};
 
 const LoginPage = ({ setAuthStatus }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -249,6 +260,11 @@ const LoginPage = ({ setAuthStatus }) => {
     setIsLoading(true);
     setError('');
     setSuccess('');
+
+    loginLogger.flow('login:submit', {
+      summary: { email, rememberMe },
+      input: { url: LOGIN_URL, email, password: '[hidden]' },
+    });
 
     try {
       const response = await axios.post(
@@ -281,20 +297,33 @@ const LoginPage = ({ setAuthStatus }) => {
         sessionStorage.setItem('token', token.trim());
       }
 
-      console.log('✅ Login successful, token stored');
+      const landingPath = ROLE_HOME[role] || '/dashboard';
+      loginLogger.flow('login:success', {
+        summary: {
+          adminId: admin.id,
+          email: userEmail,
+          role,
+          landingPath,
+          tokenStored: true,
+        },
+        output: {
+          id: admin.id,
+          name: userName,
+          email: userEmail,
+          role,
+          landingPath,
+        },
+      });
 
       setSuccess('Login successful! Redirecting to dashboard...');
       setAuthStatus(true);
 
-      const landingPath =
-        role === 'marketing-admin'
-          ? '/dashboard/demo-bookings'
-          : role === 'finance-admin'
-            ? '/dashboard/subscriptions/analytics'
-            : '/dashboard';
       setTimeout(() => navigate(landingPath), 1000);
     } catch (err) {
-      console.error('Login Error:', err.response?.data || err.message);
+      loginLogger.error('login:failed', err, {
+        summary: { email, status: err.response?.status || null },
+        output: err.response?.data || { message: err.message },
+      });
       setError(err.response?.data?.message || 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);

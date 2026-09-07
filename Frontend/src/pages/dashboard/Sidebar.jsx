@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -26,6 +26,9 @@ import {
   KeyRound,
   BarChart3,
 } from 'lucide-react';
+import { createDebugLogger } from '../../utils/debugLogger';
+
+const sidebarLogger = createDebugLogger('Sidebar');
 
 const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
   const location = useLocation();
@@ -205,6 +208,19 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
   ];
 
   const menuItems = allMenuItems.filter(item => item.roles.includes(userRole));
+
+  useEffect(() => {
+    sidebarLogger.flow('menu:resolved', {
+      summary: {
+        role: userRole,
+        itemCount: menuItems.length,
+      },
+      table: menuItems.map((item) => ({
+        name: item.name,
+        path: item.path || `(submenu:${item.key})`,
+      })),
+    });
+  }, [userRole]);
 
   return (
     <>

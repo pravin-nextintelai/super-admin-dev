@@ -7,6 +7,9 @@ import {
 import { COLORS, fmtINR, fmtNum, fmtBytes, fmtDate } from './userAnalytics/analyticsFormat';
 import { KpiCard, ChartCard, EmptyState, Donut, StatusPill } from './userAnalytics/AnalyticsCharts';
 import { fetchPlanSummary, fetchMonthlySubscribers, fetchTopupBuyers, fetchAddonBuyers } from './userAnalytics/analyticsApi';
+import { createDebugLogger } from '../../utils/debugLogger';
+
+const planAnalyticsLogger = createDebugLogger('PlanAnalytics');
 
 const TABS = [
   { key: 'monthly', label: 'Monthly Plans', icon: Repeat },
@@ -33,8 +36,37 @@ const PlanAnalytics = () => {
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
-    try { const r = await fetchPlanSummary(); setSummary(r.data); }
-    catch (e) { setErr(e.message || 'Failed to load'); }
+    const startedAt = Date.now();
+    planAnalyticsLogger.event('summary:load:start', {
+      role: localStorage.getItem('userRole'),
+    });
+    try {
+      const r = await fetchPlanSummary();
+      setSummary(r.data);
+      const totals = r.data?.totals || {};
+      planAnalyticsLogger.flow('summary:load:success', {
+        summary: {
+          role: localStorage.getItem('userRole'),
+          paid_users: totals.paid_users,
+          total_income: totals.total_income,
+          total_subscriptions: totals.total_subscriptions,
+        },
+        output: totals,
+        table: (r.data?.monthly || []).slice(0, 8).map((m) => ({
+          id: m.id,
+          name: m.name,
+          subscribers: m.subscribers,
+          paid_users: m.paid_users,
+          revenue: m.revenue,
+        })),
+        metrics: { durationMs: Date.now() - startedAt },
+      });
+    } catch (e) {
+      planAnalyticsLogger.error('summary:load:failed', e, {
+        summary: { role: localStorage.getItem('userRole') },
+      });
+      setErr(e.message || 'Failed to load');
+    }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -42,12 +74,28 @@ const PlanAnalytics = () => {
   const openPlan = async (type, plan) => {
     if (plan.is_custom) return;
     setSel({ type, id: plan.id, name: plan.name }); setRows([]); setRowsLoading(true);
+    planAnalyticsLogger.event('plan:drill-in', { type, id: plan.id, name: plan.name });
     try {
       const r = type === 'monthly' ? await fetchMonthlySubscribers(plan.id)
         : type === 'addon' ? await fetchAddonBuyers(plan.id)
         : await fetchTopupBuyers(plan.id);
-      setRows(Array.isArray(r.data) ? r.data : []);
-    } catch { setRows([]); } finally { setRowsLoading(false); }
+      const list = Array.isArray(r.data) ? r.data : [];
+      setRows(list);
+      planAnalyticsLogger.flow('plan:drill-in:success', {
+        summary: { type, id: plan.id, name: plan.name, rowCount: list.length },
+        table: list.slice(0, 8).map((row) => ({
+          user_id: row.user_id,
+          email: row.email,
+          status: row.status,
+          amount: row.amount,
+        })),
+      });
+    } catch (e) {
+      planAnalyticsLogger.error('plan:drill-in:failed', e, {
+        summary: { type, id: plan.id, name: plan.name },
+      });
+      setRows([]);
+    } finally { setRowsLoading(false); }
   };
   const closePanel = () => { setSel(null); setRows([]); };
 

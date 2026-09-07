@@ -28,6 +28,7 @@ import AddJudge from './pages/dashboard/content/AddJudge';
 import VoiceManagementPage from './features/jurinex-voice/pages/VoiceManagementPage';
 import RoleManagement from './pages/dashboard/RoleManagement';
 import Settings from './pages/dashboard/Settings';
+import { createDebugLogger } from './utils/debugLogger';
 import './App.css';
 import './index.css';
 
@@ -47,20 +48,29 @@ const ROLE_HOME = {
 // direct URL access for roles that aren't allowed on a given route.
 // super-admin (and the legacy generic "admin") always pass, so each route only
 // needs to list the ADDITIONAL non-super roles that may access it.
+const roleGuardLogger = createDebugLogger('RequireRole');
+
 const RequireRole = ({ allow, children }) => {
   const role = localStorage.getItem('userRole');
   if (role === 'super-admin' || role === 'admin' || allow.includes(role)) {
     return children;
   }
-  return <Navigate to={ROLE_HOME[role] || '/dashboard'} replace />;
+  const home = ROLE_HOME[role] || '/dashboard';
+  roleGuardLogger.flow('route:deny', {
+    level: 'warn',
+    summary: { role, home, allow },
+  });
+  return <Navigate to={home} replace />;
 };
 
 const DashboardIndex = () => {
   const role = localStorage.getItem('userRole');
   // Roles without the generic dashboard land on their own home instead.
   if (role === 'marketing-admin' || role === 'support-admin' || role === 'finance-admin') {
+    roleGuardLogger.event('dashboard-index:redirect', { role, home: ROLE_HOME[role] });
     return <Navigate to={ROLE_HOME[role]} replace />;
   }
+  roleGuardLogger.event('dashboard-index:render', { role });
   return <DashboardContent />;
 };
 

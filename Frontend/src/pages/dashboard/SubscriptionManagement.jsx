@@ -6,6 +6,9 @@ import {
   User, Users, Building2, Mail, HardDrive, BarChart3,
 } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../../config';
+import { createDebugLogger } from '../../utils/debugLogger';
+
+const subscriptionLogger = createDebugLogger('SubscriptionManagement');
 
 /* ─────────────────────────── Toast ─────────────────────────── */
 const Toast = ({ toasts, remove }) => (
@@ -499,6 +502,13 @@ const SubscriptionManagement = () => {
   const api = tab === 'monthly' ? monthlyApi : tab === 'addon' ? addonApi : topupApi;
   const list = tab === 'monthly' ? monthly : tab === 'addon' ? addon : topup;
   const kindLabel = tab === 'monthly' ? 'Monthly Plan' : tab === 'addon' ? 'Add-on Plan' : 'Topup Plan';
+
+  useEffect(() => {
+    subscriptionLogger.event('role:mode', {
+      role: localStorage.getItem('userRole'),
+      canMutate,
+    });
+  }, [canMutate]);
 
   const load = useCallback(async () => {
     setLoading(true);

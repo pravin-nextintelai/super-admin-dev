@@ -1,12 +1,30 @@
 import { API_BASE_URL, getAuthHeaders } from '../../../config';
+import { createDebugLogger } from '../../../utils/debugLogger';
+
+const analyticsApiLogger = createDebugLogger('AnalyticsApi');
 
 const BASE = `${API_BASE_URL}/admin/user-analytics`;
 
 async function req(url) {
+  const startedAt = Date.now();
+  analyticsApiLogger.event('request:start', { url });
   const res = await fetch(url, { headers: getAuthHeaders() });
   let body = {};
   try { body = await res.json(); } catch { /* non-JSON */ }
-  if (!res.ok) throw new Error(body.message || body.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    analyticsApiLogger.flow('request:failed', {
+      level: 'error',
+      summary: { url, status: res.status },
+      output: body,
+      metrics: { durationMs: Date.now() - startedAt },
+    });
+    throw new Error(body.message || body.error || `HTTP ${res.status}`);
+  }
+  analyticsApiLogger.event('request:success', {
+    url,
+    status: res.status,
+    durationMs: Date.now() - startedAt,
+  });
   return body;
 }
 

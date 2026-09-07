@@ -7,8 +7,10 @@ import {
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import { API_BASE_URL, getToken } from '../../config';
+import { createDebugLogger } from '../../utils/debugLogger';
 
 const MySwal = withReactContent(Swal);
+const demoLogger = createDebugLogger('DemoManagement');
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const fmtIST = (d, opts = {}) =>
@@ -79,8 +81,15 @@ const DemoManagement = () => {
     try {
       const res  = await fetch(`${API_BASE_URL}/admin/demo/stats`, { headers: authHeader() });
       const json = await res.json();
-      if (json.success) setStats(json);
-    } catch { /* silent */ } finally { setStatsLoading(false); }
+      if (json.success) {
+        setStats(json);
+        demoLogger.flow('stats:loaded', { output: json.bookings || json });
+      } else {
+        demoLogger.flow('stats:failed', { level: 'warn', output: json });
+      }
+    } catch (err) {
+      demoLogger.error('stats:error', err);
+    } finally { setStatsLoading(false); }
   }, []);
 
   const fetchBookings = useCallback(async (page = 1) => {
@@ -90,9 +99,25 @@ const DemoManagement = () => {
       const qs  = new URLSearchParams({ page, limit: BOOKINGS_PER_PAGE, status: statusFilter, search: bookingSearch });
       const res  = await fetch(`${API_BASE_URL}/admin/demo/bookings?${qs}`, { headers: authHeader() });
       const json = await res.json();
-      if (json.success) { setBookings(json.bookings); setBookingsTotal(json.total); setBookingsPage(page); }
-      else setBookingsError(json.error?.message || json.error || 'Failed to load bookings');
-    } catch (err) { setBookingsError(err.message); }
+      if (json.success) {
+        setBookings(json.bookings); setBookingsTotal(json.total); setBookingsPage(page);
+        demoLogger.flow('bookings:loaded', {
+          summary: { page, total: json.total, returned: json.bookings?.length || 0, status: statusFilter },
+          table: (json.bookings || []).slice(0, 8).map((b) => ({
+            id: b.id,
+            email: b.email,
+            status: b.status,
+          })),
+        });
+      }
+      else {
+        demoLogger.flow('bookings:failed', { level: 'warn', output: json });
+        setBookingsError(json.error?.message || json.error || 'Failed to load bookings');
+      }
+    } catch (err) {
+      demoLogger.error('bookings:error', err);
+      setBookingsError(err.message);
+    }
     finally { setBookingsLoading(false); }
   }, [statusFilter, bookingSearch]);
 

@@ -247,6 +247,10 @@ function makeControllers(pool) {
         [status, req.params.id]
       );
       if (!rows.length) return res.status(404).json({ success: false, error: 'Booking not found' });
+      logPortalFlow(req, 'Demo booking status updated', {
+        layer: 'DEMO_ADMIN',
+        summary: { bookingId: req.params.id, status },
+      });
       return res.json({ success: true, booking: rows[0] });
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
@@ -279,9 +283,16 @@ function makeControllers(pool) {
         );
       }
 
+      logPortalFlow(req, 'Demo invite sent', {
+        layer: 'DEMO_ADMIN',
+        summary: { bookingId: booking.id, email: booking.email, status: booking.status },
+      });
       return res.json({ success: true, message: `Invite sent to ${booking.email}` });
     } catch (err) {
-      console.error('demo sendInvite:', err.message);
+      logger.errorWithContext('Demo sendInvite failed', err, {
+        requestId: req.requestId,
+        layer: 'DEMO_ADMIN',
+      });
       return res.status(500).json({ success: false, error: err.message });
     }
   };
