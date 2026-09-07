@@ -38,6 +38,7 @@ const ROLE_HOME = {
   'super-admin': '/dashboard',
   'user-admin': '/dashboard/users',
   'account-admin': '/dashboard/subscriptions',
+  'finance-admin': '/dashboard/subscriptions/analytics',
   'marketing-admin': '/dashboard/demo-bookings',
   'support-admin': '/dashboard/support',
 };
@@ -57,7 +58,7 @@ const RequireRole = ({ allow, children }) => {
 const DashboardIndex = () => {
   const role = localStorage.getItem('userRole');
   // Roles without the generic dashboard land on their own home instead.
-  if (role === 'marketing-admin' || role === 'support-admin') {
+  if (role === 'marketing-admin' || role === 'support-admin' || role === 'finance-admin') {
     return <Navigate to={ROLE_HOME[role]} replace />;
   }
   return <DashboardContent />;
@@ -108,16 +109,16 @@ function App() {
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<DashboardIndex />} />
             <Route path="users" element={<RequireRole allow={['user-admin']}><UserManagement /></RequireRole>} />
-            <Route path="users/:userId/analytics" element={<RequireRole allow={['user-admin']}><UserAnalytics /></RequireRole>} />
-            <Route path="firms/:firmId/analytics" element={<RequireRole allow={['user-admin']}><UserAnalytics mode="firm" /></RequireRole>} />
+            <Route path="users/:userId/analytics" element={<RequireRole allow={['user-admin', 'finance-admin']}><UserAnalytics /></RequireRole>} />
+            <Route path="firms/:firmId/analytics" element={<RequireRole allow={['user-admin', 'finance-admin']}><UserAnalytics mode="firm" /></RequireRole>} />
             <Route path="admins" element={<RequireRole allow={[]}><AdminManagement /></RequireRole>} />
             <Route path="content" element={<RequireRole allow={['user-admin']}><ContentManagement /></RequireRole>} />
             <Route path="content/case-type" element={<RequireRole allow={['user-admin']}><AddCaseType /></RequireRole>} />
             <Route path="content/court" element={<RequireRole allow={['user-admin']}><AddCourt /></RequireRole>} />
             <Route path="content/judge" element={<RequireRole allow={['user-admin']}><AddJudge /></RequireRole>} />
             <Route path="templates" element={<RequireRole allow={[]}><TemplateManagement /></RequireRole>} />
-            <Route path="subscriptions" element={<RequireRole allow={['account-admin']}><SubscriptionManagement /></RequireRole>} />
-            <Route path="subscriptions/analytics" element={<RequireRole allow={['account-admin']}><PlanAnalytics /></RequireRole>} />
+            <Route path="subscriptions" element={<RequireRole allow={['account-admin', 'finance-admin']}><SubscriptionManagement /></RequireRole>} />
+            <Route path="subscriptions/analytics" element={<RequireRole allow={['account-admin', 'finance-admin']}><PlanAnalytics /></RequireRole>} />
             <Route path="prompts" element={<RequireRole allow={[]}><PromptManagement /></RequireRole>} />
             <Route path="agent-prompts" element={<RequireRole allow={[]}><AgentList /></RequireRole>} />
             <Route path="system-prompts" element={<RequireRole allow={[]}><SystemPromptManagement /></RequireRole>} />
