@@ -51,8 +51,30 @@ function adminAuthMiddleware(pool) {
                 const allowedRoles = ['super-admin', 'user-admin', 'account-admin', 'support-admin', 'marketing-admin', 'finance-admin', 'admin'];
                 if (user && allowedRoles.includes(user.role)) {
                     req.user = user;
+                    logger.flow('Admin JWT accepted', {
+                        requestId: req.requestId,
+                        layer: 'AUTH',
+                        summary: {
+                            userId: user.id,
+                            email: user.email,
+                            role: user.role,
+                            path: req.originalUrl,
+                            method: req.method,
+                        },
+                    });
                     return next();
                 }
+                logger.flow('Admin JWT rejected: role not allowed', {
+                    requestId: req.requestId,
+                    layer: 'AUTH',
+                    level: 'warn',
+                    summary: {
+                        userId: user?.id || decoded.id,
+                        email: user?.email || null,
+                        role: user?.role || decoded.role || null,
+                        path: req.originalUrl,
+                    },
+                });
             } catch (e) {
                 if (e.name === 'TokenExpiredError') {
                     return res.status(401).json({
