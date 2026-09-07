@@ -8,7 +8,7 @@ module.exports = (authPool) => {
   const router = express.Router();
   const pools = { authPool, paymentPool };
 
-  router.use(protect(authPool), authorize(['user-admin', 'super-admin']));
+  router.use(protect(authPool), authorize(['user-admin', 'super-admin', 'account-admin', 'finance-admin']));
 
   const load = () => {
     const p = require.resolve('../controllers/planAnalyticsController');

@@ -13,7 +13,7 @@ module.exports = (authPool) => {
   const pools = { authPool, paymentPool, aiDocumentPool, draftPool, citationPool };
 
   // Same guard the working /api/users admin endpoints use, so the existing dashboard token works.
-  router.use(protect(authPool), authorize(['user-admin', 'super-admin']));
+  router.use(protect(authPool), authorize(['user-admin', 'super-admin', 'finance-admin']));
 
   // Hot-reload controller so edits apply without restarting `npm start`.
   const load = () => {

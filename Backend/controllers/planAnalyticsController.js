@@ -23,17 +23,113 @@ async function attachUsers(rows, authPool) {
     });
 }
 
+async function queryPaidTotals(paymentPool) {
+    const empty = {
+        paid_users: 0,
+        monthly_revenue: 0,
+        monthly_paid_count: 0,
+        monthly_paid_users: 0,
+        topup_revenue: 0,
+        topup_paid_count: 0,
+        topup_paid_users: 0,
+        addon_revenue: 0,
+        addon_paid_count: 0,
+        addon_paid_users: 0,
+        total_income: 0,
+    };
+    try {
+        const [planPay, topupPay, addonPay, paidUsers] = await Promise.all([
+            paymentPool.query(
+                `SELECT
+                    COALESCE(SUM(amount) FILTER (WHERE LOWER(COALESCE(status, '')) = ANY($1::text[])), 0)::numeric AS revenue,
+                    COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = ANY($1::text[]))::int AS paid_count,
+                    COUNT(DISTINCT user_id) FILTER (WHERE LOWER(COALESCE(status, '')) = ANY($1::text[]))::int AS paid_users
+                 FROM payments`,
+                [PAID]
+            ),
+            paymentPool.query(
+                `SELECT
+                    COALESCE(SUM(amount) FILTER (WHERE LOWER(COALESCE(status, '')) = ANY($1::text[])), 0)::numeric AS revenue,
+                    COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = ANY($1::text[]))::int AS paid_count,
+                    COUNT(DISTINCT user_id) FILTER (WHERE LOWER(COALESCE(status, '')) = ANY($1::text[]))::int AS paid_users
+                 FROM user_token_topup_purchases`,
+                [PAID]
+            ),
+            paymentPool.query(
+                `SELECT
+                    COALESCE(SUM(amount) FILTER (WHERE LOWER(COALESCE(status, '')) = ANY($1::text[])), 0)::numeric AS revenue,
+                    COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = ANY($1::text[]))::int AS paid_count,
+                    COUNT(DISTINCT user_id) FILTER (WHERE LOWER(COALESCE(status, '')) = ANY($1::text[]))::int AS paid_users
+                 FROM user_storage_addon_purchases`,
+                [PAID]
+            ).catch(() => ({ rows: [{ revenue: 0, paid_count: 0, paid_users: 0 }] })),
+            paymentPool.query(
+                `SELECT COUNT(DISTINCT user_id)::int AS paid_users FROM (
+                    SELECT user_id FROM payments
+                      WHERE LOWER(COALESCE(status, '')) = ANY($1::text[])
+                    UNION
+                    SELECT user_id FROM user_token_topup_purchases
+                      WHERE LOWER(COALESCE(status, '')) = ANY($1::text[])
+                    UNION
+                    SELECT user_id FROM user_storage_addon_purchases
+                      WHERE LOWER(COALESCE(status, '')) = ANY($1::text[])
+                 ) paid`,
+                [PAID]
+            ).catch(async () => paymentPool.query(
+                `SELECT COUNT(DISTINCT user_id)::int AS paid_users FROM (
+                    SELECT user_id FROM payments
+                      WHERE LOWER(COALESCE(status, '')) = ANY($1::text[])
+                    UNION
+                    SELECT user_id FROM user_token_topup_purchases
+                      WHERE LOWER(COALESCE(status, '')) = ANY($1::text[])
+                 ) paid`,
+                [PAID]
+            )),
+        ]);
+        const monthlyRevenue = num(planPay.rows[0]?.revenue);
+        const topupRevenue = num(topupPay.rows[0]?.revenue);
+        const addonRevenue = num(addonPay.rows[0]?.revenue);
+        return {
+            paid_users: num(paidUsers.rows[0]?.paid_users),
+            monthly_revenue: monthlyRevenue,
+            monthly_paid_count: num(planPay.rows[0]?.paid_count),
+            monthly_paid_users: num(planPay.rows[0]?.paid_users),
+            topup_revenue: topupRevenue,
+            topup_paid_count: num(topupPay.rows[0]?.paid_count),
+            topup_paid_users: num(topupPay.rows[0]?.paid_users),
+            addon_revenue: addonRevenue,
+            addon_paid_count: num(addonPay.rows[0]?.paid_count),
+            addon_paid_users: num(addonPay.rows[0]?.paid_users),
+            total_income: monthlyRevenue + topupRevenue + addonRevenue,
+        };
+    } catch (e) {
+        console.error('[planAnalytics] paid totals failed:', e.message);
+        return { ...empty, error: e.message };
+    }
+}
+
 /** GET /summary — counts per monthly plan + per topup plan, plus add-on catalog. */
 exports.getSummary = async (req, res, pools) => {
     try {
         const monthly = await pools.paymentPool.query(
             `SELECT mp.id, mp.name, mp.price, mp.currency, mp.category, mp.is_custom,
                     COUNT(us.id)::int AS subscribers,
-                    COUNT(us.id) FILTER (WHERE LOWER(COALESCE(us.status, 'active')) IN ('active', 'topup_only'))::int AS active_subscribers
+                    COUNT(us.id) FILTER (WHERE LOWER(COALESCE(us.status, 'active')) IN ('active', 'topup_only'))::int AS active_subscribers,
+                    COALESCE(rev.revenue, 0)::numeric AS revenue,
+                    COALESCE(rev.paid_users, 0)::int AS paid_users
              FROM monthly_plans mp
              LEFT JOIN user_subscriptions us ON us.monthly_plan_id = mp.id
-             GROUP BY mp.id, mp.name, mp.price, mp.currency, mp.category, mp.is_custom
-             ORDER BY subscribers DESC, mp.sort_order ASC, mp.id ASC`
+             LEFT JOIN (
+                SELECT us2.monthly_plan_id,
+                       COALESCE(SUM(p.amount) FILTER (WHERE LOWER(COALESCE(p.status, '')) = ANY($1::text[])), 0)::numeric AS revenue,
+                       COUNT(DISTINCT p.user_id) FILTER (WHERE LOWER(COALESCE(p.status, '')) = ANY($1::text[]))::int AS paid_users
+                FROM user_subscriptions us2
+                JOIN payments p ON p.subscription_id = us2.id
+                GROUP BY us2.monthly_plan_id
+             ) rev ON rev.monthly_plan_id = mp.id
+             GROUP BY mp.id, mp.name, mp.price, mp.currency, mp.category, mp.is_custom, mp.sort_order, rev.revenue, rev.paid_users
+             ORDER BY subscribers DESC, mp.sort_order ASC, mp.id ASC`,
+            [PAID]
         );
         const topup = await pools.paymentPool.query(
             `SELECT tp.id, tp.name, tp.price, tp.currency, tp.tokens,
