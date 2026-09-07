@@ -147,7 +147,7 @@ const PlanAnalytics = () => {
               <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm"><BarChart3 className="w-5 h-5 text-white" /></div>
               <h1 className="text-xl font-bold text-slate-800">Plan Analytics</h1>
             </div>
-            <p className="text-sm text-slate-500 ml-11">How many users purchased each plan — click a plan to see its users, then drill into any user.</p>
+            <p className="text-sm text-slate-500 ml-11">Total subscriptions, paid users, amounts, and income — click a plan to see its users.</p>
           </div>
         </div>
         <button onClick={load} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
@@ -163,6 +163,19 @@ const PlanAnalytics = () => {
         </div>
       ) : loading ? <Skeleton /> : (
         <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KpiCard icon={Users} tone="slate" label="Total subscriptions" value={fmtNum(totals.total_subscriptions)} />
+            <KpiCard icon={Users} tone="emerald" label="Paid users" value={fmtNum(totals.paid_users)} sub={`${fmtNum(totals.active_subscribers)} active subscribers`} />
+            <KpiCard icon={CreditCard} tone="blue" label="Plan revenue" value={fmtINR(totals.monthly_revenue)} sub={`${fmtNum(totals.monthly_paid_users)} paid plan users`} />
+            <KpiCard
+              icon={DollarSign}
+              tone="violet"
+              label="Total income"
+              value={fmtINR(totals.total_income)}
+              sub={`${fmtINR(totals.topup_revenue)} topup · ${fmtINR(totals.addon_revenue)} add-on`}
+            />
+          </div>
+
           {/* Tabs */}
           <div className="flex items-center gap-1 border-b border-slate-200">
             {TABS.map((t) => {
