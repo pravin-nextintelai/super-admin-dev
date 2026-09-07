@@ -167,16 +167,18 @@ const authorize = (roles = []) => (req, res, next) => {
     normalizeRoleName(currentRole);
 
   if (!normalizedAllowedRoles.includes(normalizedCurrentRole)) {
-    logger.warn('Authorization denied for admin request', {
+    logger.flow('Authorization denied for admin request', {
       layer: 'AUTH',
+      level: 'warn',
       requestId: req.requestId,
-      method: req.method,
-      path: req.originalUrl,
-      userId: req.user.id,
-      currentRole,
-      normalizedCurrentRole,
-      allowedRoles: roles,
-      normalizedAllowedRoles,
+      summary: {
+        userId: req.user.id,
+        currentRole,
+        normalizedCurrentRole,
+        method: req.method,
+        path: req.originalUrl,
+        allowedRoles: roles.join(', '),
+      },
     });
     return res.status(403).json({
       message: `Access denied: Requires one of the following roles: ${roles.join(', ')}`,
@@ -186,16 +188,15 @@ const authorize = (roles = []) => (req, res, next) => {
     });
   }
 
-  logger.debug('Authorization granted for admin request', {
+  logger.flow('Authorization granted for admin request', {
     layer: 'AUTH',
     requestId: req.requestId,
-    method: req.method,
-    path: req.originalUrl,
-    userId: req.user.id,
-    currentRole,
-    normalizedCurrentRole,
-    allowedRoles: roles,
-    normalizedAllowedRoles,
+    summary: {
+      userId: req.user.id,
+      role: normalizedCurrentRole,
+      method: req.method,
+      path: req.originalUrl,
+    },
   });
   next();
 };
