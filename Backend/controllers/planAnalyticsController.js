@@ -112,26 +112,42 @@ async function queryPaidTotals(paymentPool) {
 /** GET /summary — counts per monthly plan + per topup plan, plus add-on catalog. */
 exports.getSummary = async (req, res, pools) => {
     try {
-        const monthly = await pools.paymentPool.query(
-            `SELECT mp.id, mp.name, mp.price, mp.currency, mp.category, mp.is_custom,
-                    COUNT(us.id)::int AS subscribers,
-                    COUNT(us.id) FILTER (WHERE LOWER(COALESCE(us.status, 'active')) IN ('active', 'topup_only'))::int AS active_subscribers,
-                    COALESCE(rev.revenue, 0)::numeric AS revenue,
-                    COALESCE(rev.paid_users, 0)::int AS paid_users
-             FROM monthly_plans mp
-             LEFT JOIN user_subscriptions us ON us.monthly_plan_id = mp.id
-             LEFT JOIN (
-                SELECT us2.monthly_plan_id,
-                       COALESCE(SUM(p.amount) FILTER (WHERE LOWER(COALESCE(p.status, '')) = ANY($1::text[])), 0)::numeric AS revenue,
-                       COUNT(DISTINCT p.user_id) FILTER (WHERE LOWER(COALESCE(p.status, '')) = ANY($1::text[]))::int AS paid_users
-                FROM user_subscriptions us2
-                JOIN payments p ON p.subscription_id = us2.id
-                GROUP BY us2.monthly_plan_id
-             ) rev ON rev.monthly_plan_id = mp.id
-             GROUP BY mp.id, mp.name, mp.price, mp.currency, mp.category, mp.is_custom, mp.sort_order, rev.revenue, rev.paid_users
-             ORDER BY subscribers DESC, mp.sort_order ASC, mp.id ASC`,
-            [PAID]
-        );
+        let monthly;
+        try {
+            monthly = await pools.paymentPool.query(
+                `SELECT mp.id, mp.name, mp.price, mp.currency, mp.category, mp.is_custom,
+                        COUNT(us.id)::int AS subscribers,
+                        COUNT(us.id) FILTER (WHERE LOWER(COALESCE(us.status, 'active')) IN ('active', 'topup_only'))::int AS active_subscribers,
+                        COALESCE(rev.revenue, 0)::numeric AS revenue,
+                        COALESCE(rev.paid_users, 0)::int AS paid_users
+                 FROM monthly_plans mp
+                 LEFT JOIN user_subscriptions us ON us.monthly_plan_id = mp.id
+                 LEFT JOIN (
+                    SELECT us2.monthly_plan_id,
+                           COALESCE(SUM(p.amount) FILTER (WHERE LOWER(COALESCE(p.status, '')) = ANY($1::text[])), 0)::numeric AS revenue,
+                           COUNT(DISTINCT p.user_id) FILTER (WHERE LOWER(COALESCE(p.status, '')) = ANY($1::text[]))::int AS paid_users
+                    FROM user_subscriptions us2
+                    JOIN payments p ON p.subscription_id = us2.id
+                    GROUP BY us2.monthly_plan_id
+                 ) rev ON rev.monthly_plan_id = mp.id
+                 GROUP BY mp.id, mp.name, mp.price, mp.currency, mp.category, mp.is_custom, mp.sort_order, rev.revenue, rev.paid_users
+                 ORDER BY subscribers DESC, mp.sort_order ASC, mp.id ASC`,
+                [PAID]
+            );
+        } catch (e) {
+            console.error('[planAnalytics] monthly revenue join failed, falling back to subscriber counts:', e.message);
+            monthly = await pools.paymentPool.query(
+                `SELECT mp.id, mp.name, mp.price, mp.currency, mp.category, mp.is_custom,
+                        COUNT(us.id)::int AS subscribers,
+                        COUNT(us.id) FILTER (WHERE LOWER(COALESCE(us.status, 'active')) IN ('active', 'topup_only'))::int AS active_subscribers,
+                        0::numeric AS revenue,
+                        0::int AS paid_users
+                 FROM monthly_plans mp
+                 LEFT JOIN user_subscriptions us ON us.monthly_plan_id = mp.id
+                 GROUP BY mp.id, mp.name, mp.price, mp.currency, mp.category, mp.is_custom, mp.sort_order
+                 ORDER BY subscribers DESC, mp.sort_order ASC, mp.id ASC`
+            );
+        }
         const topup = await pools.paymentPool.query(
             `SELECT tp.id, tp.name, tp.price, tp.currency, tp.tokens,
                     COUNT(DISTINCT up.user_id)::int AS buyers,
