@@ -188,8 +188,10 @@ const authorize = (roles = []) => (req, res, next) => {
     });
   }
 
+  const isPortalRole = normalizedCurrentRole === 'finance-admin' || normalizedCurrentRole === 'marketing-admin';
   logger.flow('Authorization granted for admin request', {
     layer: 'AUTH',
+    level: isPortalRole ? 'info' : 'debug',
     requestId: req.requestId,
     summary: {
       userId: req.user.id,

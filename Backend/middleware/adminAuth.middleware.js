@@ -51,9 +51,11 @@ function adminAuthMiddleware(pool) {
                 const allowedRoles = ['super-admin', 'user-admin', 'account-admin', 'support-admin', 'marketing-admin', 'finance-admin', 'admin'];
                 if (user && allowedRoles.includes(user.role)) {
                     req.user = user;
+                    const isPortalRole = user.role === 'finance-admin' || user.role === 'marketing-admin';
                     logger.flow('Admin JWT accepted', {
                         requestId: req.requestId,
                         layer: 'AUTH',
+                        level: isPortalRole ? 'info' : 'debug',
                         summary: {
                             userId: user.id,
                             email: user.email,

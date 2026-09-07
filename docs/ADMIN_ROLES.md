@@ -266,3 +266,24 @@ The frontend stores `token`, `userRole`, `userEmail`, `userName` in `localStorag
 | Create Admin → `Invalid role` | Missing `admin_roles` row | `node migrations/seed_finance_admin_role.js` (and marketing seed) |
 | Finance can still edit plans | Old frontend bundle | Restart Vite; confirm `canMutate` in Subscription Management |
 | Marketing cannot load demos | Token not sent or role not in `adminAuth` | Confirm `marketing-admin` is in `adminAuth.middleware.js` `allowedRoles` |
+
+---
+
+## 11. End-to-end console logs
+
+Logs use the existing `logger.flow` (backend terminal) and `createDebugLogger` (browser DevTools). Passwords and JWT bodies are never printed.
+
+**Backend** (terminal running `npm start`): look for layers `AUTH_LOGIN`, `AUTH`, `PLAN_ANALYTICS`, `DEMO_ADMIN`, `PORTAL_ADMIN`.
+
+| Stage | What you should see |
+|---|---|
+| Login | `Admin login attempt` → `lookup complete` → `success` with `role` + `landingPath` |
+| JWT / authorize | `Admin JWT accepted` and `Authorization granted` (info for finance/marketing) |
+| Finance analytics | `Plan analytics summary loaded` with totals + monthly table |
+| Finance drill-in | `monthly subscribers` / `topup buyers` / `addon buyers` loaded |
+| Marketing demos | `Demo booking stats loaded`, `Demo bookings list loaded`, status / invite |
+
+**Browser console** (F12): namespaces `[AuthLogin]`, `[RequireRole]`, `[Sidebar]`, `[PlanAnalytics]`, `[AnalyticsApi]`, `[SubscriptionManagement]`, `[DemoManagement]`, `[CreateAdmin]`.
+
+Collapsed groups contain Summary / Input / Output / Metrics / table. Login prints `password: '[hidden]'` only.
+

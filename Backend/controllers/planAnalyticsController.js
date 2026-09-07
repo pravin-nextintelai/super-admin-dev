@@ -292,6 +292,8 @@ exports.getMonthlySubscribers = async (req, res, pools) => {
         });
         return res.status(500).json({ success: false, message: e.message });
     }
+};
+
 exports.getAddonBuyers = async (req, res, pools) => {
     const planId = parseInt(req.params.planId, 10);
     if (!Number.isFinite(planId)) return res.status(400).json({ success: false, message: 'Invalid plan id' });
@@ -318,6 +320,8 @@ exports.getAddonBuyers = async (req, res, pools) => {
         });
         return res.status(500).json({ success: false, message: e.message });
     }
+};
+
 exports.getTopupBuyers = async (req, res, pools) => {
     const planId = parseInt(req.params.planId, 10);
     if (!Number.isFinite(planId)) return res.status(400).json({ success: false, message: 'Invalid plan id' });
@@ -344,3 +348,5 @@ exports.getTopupBuyers = async (req, res, pools) => {
         });
         return res.status(500).json({ success: false, message: e.message });
     }
+};
+
