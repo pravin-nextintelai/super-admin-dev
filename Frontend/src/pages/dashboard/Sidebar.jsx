@@ -24,6 +24,7 @@ import {
   CalendarCheck,
   Mic,
   KeyRound,
+  BarChart3,
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
@@ -179,9 +180,15 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
     },
     {
       name: 'Subscription Management',
-      path: '/dashboard/subscriptions', // Assuming a path for subscription management
+      path: '/dashboard/subscriptions',
       icon: CreditCard,
-      roles: ['super-admin', 'account-admin']
+      roles: ['super-admin', 'account-admin', 'finance-admin']
+    },
+    {
+      name: 'Plan Analytics',
+      path: '/dashboard/subscriptions/analytics',
+      icon: BarChart3,
+      roles: ['super-admin', 'account-admin', 'finance-admin']
     },
     {
       name: 'Support & Help',
@@ -193,7 +200,7 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
       name: 'Settings',
       path: '/dashboard/settings',
       icon: Settings,
-      roles: ['super-admin', 'user-admin', 'account-admin', 'support-admin', 'marketing-admin']
+      roles: ['super-admin', 'user-admin', 'account-admin', 'support-admin', 'marketing-admin', 'finance-admin']
     }
   ];
 
