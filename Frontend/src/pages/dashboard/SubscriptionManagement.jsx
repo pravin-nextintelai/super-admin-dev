@@ -447,10 +447,10 @@ const addonApi = makeApi('/admin/addon-plans');
 
 /* ─────────────────────────── Shared row bits ─────────────────────────── */
 const StatusBadge = ({ active, onClick }) => (
-  <button onClick={onClick} title="Toggle active"
+  <button onClick={onClick} disabled={!onClick} title={onClick ? 'Toggle active' : undefined}
     className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors
-      ${active ? 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100'
-               : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'}`}>
+      ${active ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-400'}
+      ${onClick ? (active ? 'hover:bg-emerald-100' : 'hover:bg-slate-100') : 'cursor-default'}`}>
     <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
     {active ? 'Active' : 'Inactive'}
   </button>
@@ -494,6 +494,7 @@ const SubscriptionManagement = () => {
   const [delTarget, setDelTarget] = useState(null);
   const toast = useToast();
   const navigate = useNavigate();
+  const canMutate = localStorage.getItem('userRole') !== 'finance-admin';
 
   const api = tab === 'monthly' ? monthlyApi : tab === 'addon' ? addonApi : topupApi;
   const list = tab === 'monthly' ? monthly : tab === 'addon' ? addon : topup;
@@ -594,10 +595,12 @@ const SubscriptionManagement = () => {
               className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold rounded-lg shadow-sm transition-colors">
               <BarChart3 className="w-4 h-4" /> Plan Analytics
             </button>
-            <button onClick={openAdd}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors">
-              <Plus className="w-4 h-4" /> Add {kindLabel}
-            </button>
+            {canMutate && (
+              <button onClick={openAdd}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors">
+                <Plus className="w-4 h-4" /> Add {kindLabel}
+              </button>
+            )}
           </div>
         </div>
 
@@ -683,7 +686,7 @@ const SubscriptionManagement = () => {
                       <div className="flex flex-col items-center gap-2 text-slate-400">
                         {tab === 'monthly' ? <Repeat className="w-10 h-10 opacity-30" /> : tab === 'addon' ? <HardDrive className="w-10 h-10 opacity-30" /> : <Package className="w-10 h-10 opacity-30" />}
                         <p className="text-sm font-medium">{search ? 'No plans match your search.' : `No ${tab} plans yet.`}</p>
-                        {!search && (
+                        {!search && canMutate && (
                           <button onClick={openAdd} className="mt-1 px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors">
                             Add First {kindLabel}
                           </button>
@@ -757,8 +760,8 @@ const SubscriptionManagement = () => {
                         </td>
                       </>
                     )}
-                    <td className="px-4 py-3"><StatusBadge active={!!plan.is_active} onClick={() => toggleActive(plan)} /></td>
-                    <td className="px-4 py-3 text-right"><RowActions onEdit={() => openEdit(plan)} onDelete={() => setDelTarget(plan)} /></td>
+                    <td className="px-4 py-3"><StatusBadge active={!!plan.is_active} onClick={canMutate ? () => toggleActive(plan) : undefined} /></td>
+                    <td className="px-4 py-3 text-right">{canMutate ? <RowActions onEdit={() => openEdit(plan)} onDelete={() => setDelTarget(plan)} /> : <span className="text-slate-300 text-xs">View only</span>}</td>
                   </tr>
                 ))}
               </tbody>
