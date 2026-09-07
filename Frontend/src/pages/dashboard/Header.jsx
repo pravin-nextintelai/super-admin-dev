@@ -8,6 +8,7 @@ const formatRoleLabel = (role = '') => {
   if (normalized === 'user-admin') return 'User Admin';
   if (normalized === 'account-admin') return 'Account Admin';
   if (normalized === 'marketing-admin') return 'Marketing Admin';
+  if (normalized === 'finance-admin') return 'Finance Admin';
   if (normalized === 'super-admin') return 'Super Admin';
   return String(role)
     .split(/[\s_-]+/)

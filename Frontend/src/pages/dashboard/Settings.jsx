@@ -8,6 +8,7 @@ const ROLE_LABELS = {
   'account-admin': 'Account Admin',
   'support-admin': 'Support Admin',
   'marketing-admin': 'Marketing Admin',
+  'finance-admin': 'Finance Admin',
   admin: 'Admin',
 };
 

@@ -603,10 +603,15 @@ const CreateAdmin = ({ onAdminCreated, onCancel }) => {
               <option value="support-admin">Support Admin</option>
               <option value="account-admin">Account Admin</option>
               <option value="marketing-admin">Marketing Admin</option>
+              <option value="finance-admin">Finance Admin</option>
             </select>
           </div>
           <p className="mt-1 text-xs text-gray-500">
-            Super Admin has full control including creating and managing other admins
+            {role === 'finance-admin'
+              ? 'Finance Admin can view subscriptions, paid users, amounts, and total income.'
+              : role === 'marketing-admin'
+                ? 'Marketing Admin can manage demo bookings and the AI chatbot.'
+                : 'Super Admin has full control including creating and managing other admins'}
           </p>
         </div>
 

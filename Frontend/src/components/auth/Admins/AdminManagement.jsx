@@ -792,6 +792,8 @@ const AdminManagement = () => {
                         <option value="user-admin">User Admin</option>
                         <option value="support-admin">Support Admin</option>
                         <option value="account-admin">Account Admin</option>
+                        <option value="marketing-admin">Marketing Admin</option>
+                        <option value="finance-admin">Finance Admin</option>
                       </select>
                     ) : (
                       <div className="flex items-center">

@@ -286,7 +286,12 @@ const LoginPage = ({ setAuthStatus }) => {
       setSuccess('Login successful! Redirecting to dashboard...');
       setAuthStatus(true);
 
-      const landingPath = role === 'marketing-admin' ? '/dashboard/demo-bookings' : '/dashboard';
+      const landingPath =
+        role === 'marketing-admin'
+          ? '/dashboard/demo-bookings'
+          : role === 'finance-admin'
+            ? '/dashboard/subscriptions/analytics'
+            : '/dashboard';
       setTimeout(() => navigate(landingPath), 1000);
     } catch (err) {
       console.error('Login Error:', err.response?.data || err.message);

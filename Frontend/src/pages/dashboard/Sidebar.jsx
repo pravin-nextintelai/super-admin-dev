@@ -39,7 +39,9 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
           ? 'Account Admin'
           : userRole === 'marketing-admin'
             ? 'Marketing Admin'
-            : 'Super Admin';
+            : userRole === 'finance-admin'
+              ? 'Finance Admin'
+              : 'Super Admin';
   const initials = username
     .split(/\s+/)
     .filter(Boolean)
