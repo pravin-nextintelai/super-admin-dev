@@ -6,6 +6,8 @@
 
 > Set `ADMIN_TOKEN` in `.env`. All admin endpoints require a valid Bearer token (either the static `ADMIN_TOKEN` or a JWT from dashboard login).
 
+Portal roles (`super-admin`, `user-admin`, `account-admin`, `finance-admin`, `marketing-admin`, `support-admin`), test logins, and plan-analytics KPIs: [docs/ADMIN_ROLES.md](../docs/ADMIN_ROLES.md).
+
 ---
 
 ## Route Prefixes
@@ -16,6 +18,8 @@
 | User Management | `/api/admin/users` | Auth DB |
 | Auth | `/api/auth` | Auth DB |
 | Plans | `/api/admin/plans` | Payment DB |
+| Plan Analytics | `/api/admin/plan-analytics` | Payment DB + Auth DB |
+| Demo Bookings | `/api/admin/demo` | Auth / demo tables |
 | Health Check | `/api/admin/health` | Main DB + Citation DB |
 
 ---

@@ -25,7 +25,7 @@ The repository contains four applications that are developed and deployed indepe
 
 ## Main capabilities
 
-- Role-based access for super, user, account, marketing, and support administrators, enforced across the sidebar, routes, and APIs (see [Role-based access control](#role-based-access-control-rbac))
+- Role-based access for super, user, account, finance, marketing, and support administrators, enforced across the sidebar, routes, and APIs (see [Role-based access control](#role-based-access-control-rbac) and [Admin roles guide](docs/ADMIN_ROLES.md))
 - Per-admin account settings page with session sign-out
 - User, administrator, role, subscription, add-on, and plan analytics management
 - LLM, system prompt, agent prompt, preset prompt, and chatbot configuration
@@ -124,19 +124,29 @@ PostgreSQL is the source of truth. Google Cloud Storage holds original and gener
 
 ## Role-based access control (RBAC)
 
-The dashboard defines five administrator roles. Access is enforced at three independent layers, so a role only ever *sees* — and can only ever *reach* — the areas it is entitled to.
+The dashboard defines six administrator roles. Access is enforced at three independent layers, so a role only ever *sees* — and can only ever *reach* — the areas it is entitled to. Full matrices, APIs, test logins, and console-log names: [Admin roles guide](docs/ADMIN_ROLES.md).
 
 ### Administrator roles
 
 | Role | Modules it can access | Login landing |
 | --- | --- | --- |
 | `super-admin` | Every module | `/dashboard` |
-| `user-admin` | Dashboard, User Management (incl. per-user and per-firm analytics), Content Management (case type, court, judge), Settings | `/dashboard` |
-| `account-admin` | Dashboard, Subscription Management (incl. plan analytics), Settings | `/dashboard` |
+| `user-admin` | User Management (incl. per-user and per-firm analytics), Content Management (case type, court, judge), Settings | `/dashboard/users` |
+| `account-admin` | Subscription Management (create/edit/delete plans), Plan Analytics, Settings | `/dashboard/subscriptions` |
+| `finance-admin` | Plan Analytics (home), Subscription Management **view only**, per-user billing drill-in, Settings | `/dashboard/subscriptions/analytics` |
 | `marketing-admin` | AI Chatbot, Demo Bookings, Settings | `/dashboard/demo-bookings` |
 | `support-admin` | Support & Help workspace, Settings | `/dashboard/support` |
 
 Admin, Role, Prompt, System-Prompt, Agent-Prompt, Template, Citation, LLM, and Voice management, plus Judgment upload and search, are **super-admin only**. Settings is available to every authenticated role. A `super-admin` (and the legacy generic `admin`) passes every check.
+
+Dev test accounts (Auth_DB, not Jurinex `users`):
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Marketing Admin | `marketing.admin@jurinex.dev` | `Marketing@1234` |
+| Finance Admin | `finance.admin@jurinex.dev` | `Finance@1234` |
+
+Re-seed: `cd Backend && node migrations/seed_marketing_and_finance_test_admins.js`
 
 ### Enforcement layers
 
@@ -148,7 +158,7 @@ Hiding a menu item is only cosmetic; the route guard and the API are what actual
 | Route guard | `Frontend/src/App.jsx` (`RequireRole` + `ROLE_HOME`) | Redirect a role away from a page it cannot use, even when the URL is typed directly |
 | API authorization | `Backend/middleware/authMiddleware.js` (`protect` + `authorize([...])`) | The authoritative check — verify the JWT, load the admin, and confirm the role before reading or writing data |
 
-`protect` verifies the JWT and attaches the admin (id, email, normalized role, blocked flag); `authorize(['super-admin', ...])` then rejects any role outside its allow-list with `403`. When a role opens a page it may not use, the route guard redirects it to that role's home defined in `ROLE_HOME` (user-admin → User Management, account-admin → Subscription Management, marketing-admin → Demo Bookings, support-admin → Support).
+`protect` verifies the JWT and attaches the admin (id, email, normalized role, blocked flag); `authorize(['super-admin', ...])` then rejects any role outside its allow-list with `403`. When a role opens a page it may not use, the route guard redirects it to that role's home defined in `ROLE_HOME` (user-admin → User Management, account-admin → Subscription Management, finance-admin → Plan Analytics, marketing-admin → Demo Bookings, support-admin → Support).
 
 ### Support workspace RBAC
 
@@ -498,4 +508,5 @@ The backend package's default `npm test` is a placeholder and intentionally exit
 - [Jurinex Voice module](Backend/modules/jurinex-voice/README.md)
 - [Jurinex Voice data model](docs/JURINEX_VOICE_DATA_MODEL.md)
 - [Jurinex Voice GCS setup](docs/JURINEX_VOICE_GCS_SETUP.md)
+- [Admin roles (Marketing / Finance, test logins, logs)](docs/ADMIN_ROLES.md)
 - [Plan limits integration](docs/PLAN_LIMITS_INTEGRATION.md)
