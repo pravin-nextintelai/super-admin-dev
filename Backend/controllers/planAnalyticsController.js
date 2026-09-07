@@ -8,6 +8,8 @@
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const PAID = ['captured', 'paid', 'success', 'succeeded', 'completed'];
+const { logPortalFlow } = require('../utils/portalAdminLog');
+const logger = require('../config/logger');
 
 /** Enrich Payment-DB rows (which only have user_id) with username/email from the Auth DB. */
 async function attachUsers(rows, authPool) {
