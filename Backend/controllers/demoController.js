@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+const { logPortalFlow } = require('../utils/portalAdminLog');
+const logger = require('../config/logger');
 
 // ── Mailer ─────────────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -139,9 +141,16 @@ function makeControllers(pool) {
       );
       const bookings = { total: 0, lead: 0, pending: 0, confirmed: 0, cancelled: 0, completed: 0 };
       bRes.rows.forEach(r => { bookings[r.status] = r.count; bookings.total += r.count; });
+      logPortalFlow(_req, 'Demo booking stats loaded', {
+        layer: 'DEMO_ADMIN',
+        output: bookings,
+      });
       return res.json({ success: true, bookings });
     } catch (err) {
-      console.error('demo getStats:', err.message);
+      logger.errorWithContext('Demo getStats failed', err, {
+        requestId: _req.requestId,
+        layer: 'DEMO_ADMIN',
+      });
       return res.status(500).json({ success: false, error: err.message });
     }
   };
@@ -179,6 +188,23 @@ function makeControllers(pool) {
         params
       );
 
+      logPortalFlow(req, 'Demo bookings list loaded', {
+        layer: 'DEMO_ADMIN',
+        summary: {
+          total: parseInt(countRes.rows[0].count),
+          page: parseInt(page),
+          limit: parseInt(limit),
+          status,
+          search: search || null,
+          returned: rows.length,
+        },
+        table: rows.slice(0, 8).map((r) => ({
+          id: r.id,
+          email: r.email,
+          status: r.status,
+          scheduled_at: r.scheduled_at,
+        })),
+      });
       return res.json({
         success:  true,
         total:    parseInt(countRes.rows[0].count),
@@ -187,7 +213,10 @@ function makeControllers(pool) {
         bookings: rows,
       });
     } catch (err) {
-      console.error('demo getAllBookings:', err.message);
+      logger.errorWithContext('Demo getAllBookings failed', err, {
+        requestId: req.requestId,
+        layer: 'DEMO_ADMIN',
+      });
       return res.status(500).json({ success: false, error: err.message });
     }
   };

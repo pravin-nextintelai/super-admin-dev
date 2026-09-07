@@ -206,32 +206,55 @@ exports.getSummary = async (req, res, pools) => {
         const finance = await queryPaidTotals(pools.paymentPool);
         const totalSubscriptions = monthly.rows.reduce((s, m) => s + num(m.subscribers), 0);
         const activeSubscribers = monthly.rows.reduce((s, m) => s + num(m.active_subscribers), 0);
+        const totals = {
+            currency: 'INR',
+            total_subscriptions: totalSubscriptions,
+            active_subscribers: activeSubscribers,
+            paid_users: finance.paid_users,
+            monthly_revenue: finance.monthly_revenue,
+            monthly_paid_users: finance.monthly_paid_users,
+            monthly_paid_count: finance.monthly_paid_count,
+            topup_revenue: finance.topup_revenue,
+            topup_paid_users: finance.topup_paid_users,
+            topup_paid_count: finance.topup_paid_count,
+            addon_revenue: finance.addon_revenue,
+            addon_paid_users: finance.addon_paid_users,
+            addon_paid_count: finance.addon_paid_count,
+            total_income: finance.total_income,
+            ...(finance.error ? { error: finance.error } : {}),
+        };
+        logPortalFlow(req, 'Plan analytics summary loaded', {
+            layer: 'PLAN_ANALYTICS',
+            summary: {
+                monthlyPlans: monthly.rows.length,
+                topupPlans: topup.rows.length,
+                addonPlans: addons?.plans?.length || 0,
+                addonTracked: Boolean(addons?.tracked),
+            },
+            output: totals,
+            table: monthly.rows.slice(0, 8).map((m) => ({
+                id: m.id,
+                name: m.name,
+                subscribers: m.subscribers,
+                paid_users: m.paid_users,
+                revenue: m.revenue,
+            })),
+        });
         return res.status(200).json({
             success: true,
             data: {
                 monthly: monthly.rows,
                 topup: topup.rows,
                 addons,
-                totals: {
-                    currency: 'INR',
-                    total_subscriptions: totalSubscriptions,
-                    active_subscribers: activeSubscribers,
-                    paid_users: finance.paid_users,
-                    monthly_revenue: finance.monthly_revenue,
-                    monthly_paid_users: finance.monthly_paid_users,
-                    monthly_paid_count: finance.monthly_paid_count,
-                    topup_revenue: finance.topup_revenue,
-                    topup_paid_users: finance.topup_paid_users,
-                    topup_paid_count: finance.topup_paid_count,
-                    addon_revenue: finance.addon_revenue,
-                    addon_paid_users: finance.addon_paid_users,
-                    addon_paid_count: finance.addon_paid_count,
-                    total_income: finance.total_income,
-                    ...(finance.error ? { error: finance.error } : {}),
-                },
+                totals,
             },
         });
     } catch (e) {
+        logger.errorWithContext('Plan analytics summary failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { role: req.user?.role || null, userId: req.user?.id || null },
+        });
         return res.status(500).json({ success: false, message: e.message });
     }
 };
@@ -250,13 +273,25 @@ exports.getMonthlySubscribers = async (req, res, pools) => {
              ORDER BY us.created_at DESC NULLS LAST`,
             [planId]
         );
-        return res.status(200).json({ success: true, data: await attachUsers(rows, pools.authPool) });
+        const data = await attachUsers(rows, pools.authPool);
+        logPortalFlow(req, 'Plan analytics monthly subscribers loaded', {
+            layer: 'PLAN_ANALYTICS',
+            summary: { planId, rowCount: data.length },
+            table: data.slice(0, 8).map((r) => ({
+                user_id: r.user_id,
+                email: r.email,
+                status: r.status,
+            })),
+        });
+        return res.status(200).json({ success: true, data });
     } catch (e) {
+        logger.errorWithContext('Plan analytics monthly subscribers failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { planId },
+        });
         return res.status(500).json({ success: false, message: e.message });
     }
-};
-
-/** GET /addon/:planId/buyers — storage add-on purchasers from user_storage_addon_purchases. */
 exports.getAddonBuyers = async (req, res, pools) => {
     const planId = parseInt(req.params.planId, 10);
     if (!Number.isFinite(planId)) return res.status(400).json({ success: false, message: 'Invalid plan id' });
@@ -269,13 +304,20 @@ exports.getAddonBuyers = async (req, res, pools) => {
              LIMIT 500`,
             [planId]
         );
-        return res.status(200).json({ success: true, data: await attachUsers(rows, pools.authPool) });
+        const data = await attachUsers(rows, pools.authPool);
+        logPortalFlow(req, 'Plan analytics addon buyers loaded', {
+            layer: 'PLAN_ANALYTICS',
+            summary: { planId, rowCount: data.length },
+        });
+        return res.status(200).json({ success: true, data });
     } catch (e) {
+        logger.errorWithContext('Plan analytics addon buyers failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { planId },
+        });
         return res.status(500).json({ success: false, message: e.message });
     }
-};
-
-/** GET /topup/:planId/buyers */
 exports.getTopupBuyers = async (req, res, pools) => {
     const planId = parseInt(req.params.planId, 10);
     if (!Number.isFinite(planId)) return res.status(400).json({ success: false, message: 'Invalid plan id' });
@@ -288,8 +330,17 @@ exports.getTopupBuyers = async (req, res, pools) => {
              LIMIT 500`,
             [planId]
         );
-        return res.status(200).json({ success: true, data: await attachUsers(rows, pools.authPool) });
+        const data = await attachUsers(rows, pools.authPool);
+        logPortalFlow(req, 'Plan analytics topup buyers loaded', {
+            layer: 'PLAN_ANALYTICS',
+            summary: { planId, rowCount: data.length },
+        });
+        return res.status(200).json({ success: true, data });
     } catch (e) {
+        logger.errorWithContext('Plan analytics topup buyers failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { planId },
+        });
         return res.status(500).json({ success: false, message: e.message });
     }
-};
