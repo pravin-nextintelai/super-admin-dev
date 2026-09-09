@@ -335,18 +335,19 @@ const MONTH_RE = /^\d{4}-\d{2}$/;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function loadSubscriberFacets(paymentPool) {
-    const [plans, topupPlans] = await Promise.all([
+    const [plans, topupPlans, addonRes] = await Promise.all([
         paymentPool.query(`SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`),
         paymentPool.query(`SELECT id, name FROM topup_plans ORDER BY sort_order ASC, id ASC`),
+        paymentPool.query(`SELECT id, name FROM addon_plans ORDER BY sort_order ASC, id ASC`).catch(() => ({ rows: [] })),
     ]);
-    return { plans: plans.rows, topupPlans: topupPlans.rows };
+    return { plans: plans.rows, topupPlans: topupPlans.rows, addonPlans: addonRes.rows };
 }
 
 /**
  * GET /subscribers — paginated list of monthly-plan subscribers (all plans).
- * Query: page, pageSize, planId, topupPlanId, month (YYYY-MM), day (YYYY-MM-DD), search, status.
+ * Query: page, pageSize, planId, topupPlanId, addonPlanId, month (YYYY-MM), day (YYYY-MM-DD), search, status.
  * Day overrides month. Search matches Auth DB username/email then filters Payment rows.
- * topupPlanId keeps monthly subscribers who bought that top-up pack.
+ * topupPlanId / addonPlanId keep monthly subscribers who bought that pack.
  */
 exports.getSubscribers = async (req, res, pools) => {
     const page = clampPage(req.query.page);
@@ -356,6 +357,8 @@ exports.getSubscribers = async (req, res, pools) => {
     const planId = Number.isFinite(planIdRaw) ? planIdRaw : null;
     const topupPlanIdRaw = parseInt(req.query.topupPlanId, 10);
     const topupPlanId = Number.isFinite(topupPlanIdRaw) ? topupPlanIdRaw : null;
+    const addonPlanIdRaw = parseInt(req.query.addonPlanId, 10);
+    const addonPlanId = Number.isFinite(addonPlanIdRaw) ? addonPlanIdRaw : null;
     const day = DAY_RE.test(String(req.query.day || '').trim()) ? String(req.query.day).trim() : null;
     const month = !day && MONTH_RE.test(String(req.query.month || '').trim()) ? String(req.query.month).trim() : null;
     const search = String(req.query.search || '').trim().slice(0, 120);
@@ -375,7 +378,7 @@ exports.getSubscribers = async (req, res, pools) => {
                 const facets = await loadSubscriberFacets(pools.paymentPool);
                 logPortalFlow(req, 'Plan analytics subscribers list loaded', {
                     layer: 'PLAN_ANALYTICS',
-                    summary: { page, pageSize, planId, topupPlanId, month, day, search, status, total: 0, rowCount: 0 },
+                    summary: { page, pageSize, planId, topupPlanId, addonPlanId, month, day, search, status, total: 0, rowCount: 0 },
                 });
                 return res.status(200).json({
                     success: true,
@@ -406,6 +409,15 @@ exports.getSubscribers = async (req, res, pools) => {
                     WHERE up.user_id = us.user_id AND up.topup_plan_id = $?
                 )`,
                 topupPlanId
+            );
+        }
+        if (addonPlanId != null) {
+            add(
+                `EXISTS (
+                    SELECT 1 FROM user_storage_addon_purchases ap
+                    WHERE ap.user_id = us.user_id AND ap.addon_plan_id = $?
+                )`,
+                addonPlanId
             );
         }
         if (status) add('LOWER(COALESCE(us.status, \'\')) = $?', status);
@@ -459,6 +471,7 @@ exports.getSubscribers = async (req, res, pools) => {
                 pageSize,
                 planId,
                 topupPlanId,
+                addonPlanId,
                 month,
                 day,
                 search: search || null,
@@ -488,7 +501,7 @@ exports.getSubscribers = async (req, res, pools) => {
         logger.errorWithContext('Plan analytics subscribers list failed', e, {
             requestId: req.requestId,
             layer: 'PLAN_ANALYTICS',
-            summary: { page, pageSize, planId, topupPlanId, month, day, search: search || null, status },
+            summary: { page, pageSize, planId, topupPlanId, addonPlanId, month, day, search: search || null, status },
         });
         return res.status(500).json({ success: false, message: e.message });
     }

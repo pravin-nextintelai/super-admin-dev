@@ -41,6 +41,7 @@ const FinanceSubscribers = () => {
   const [search, setSearch] = useState('');
   const [planId, setPlanId] = useState('');
   const [topupPlanId, setTopupPlanId] = useState('');
+  const [addonPlanId, setAddonPlanId] = useState('');
   const [month, setMonth] = useState('');
   const [day, setDay] = useState('');
   const [page, setPage] = useState(1);
@@ -49,6 +50,7 @@ const FinanceSubscribers = () => {
   const [total, setTotal] = useState(0);
   const [plans, setPlans] = useState([]);
   const [topupPlans, setTopupPlans] = useState([]);
+  const [addonPlans, setAddonPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const tableAreaRef = useRef(null);
@@ -74,6 +76,7 @@ const FinanceSubscribers = () => {
       pageSize,
       planId: planId || undefined,
       topupPlanId: topupPlanId || undefined,
+      addonPlanId: addonPlanId || undefined,
       month: month || undefined,
       day: day || undefined,
       search: search || undefined,
@@ -90,6 +93,7 @@ const FinanceSubscribers = () => {
       setTotal(Number(data.total) || 0);
       setPlans(Array.isArray(data.filters?.plans) ? data.filters.plans : []);
       setTopupPlans(Array.isArray(data.filters?.topupPlans) ? data.filters.topupPlans : []);
+      setAddonPlans(Array.isArray(data.filters?.addonPlans) ? data.filters.addonPlans : []);
       financeSubscribersLogger.flow('list:load:success', {
         summary: {
           role: localStorage.getItem('userRole'),
@@ -98,6 +102,7 @@ const FinanceSubscribers = () => {
           pageSize: data.pageSize,
           planId: planId || null,
           topupPlanId: topupPlanId || null,
+          addonPlanId: addonPlanId || null,
           month: month || null,
           day: day || null,
           search: search || null,
