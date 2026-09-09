@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, ChevronLeft, ChevronRight, Eye, Lock, RefreshCw, Search, Users, X,
@@ -9,10 +9,18 @@ import { fetchPlanSubscribers } from './userAnalytics/analyticsApi';
 import { createDebugLogger } from '../../utils/debugLogger';
 
 const financeSubscribersLogger = createDebugLogger('FinanceSubscribers');
-const PAGE_SIZE = 10;
+const MIN_PAGE_SIZE = 8;
+const MAX_PAGE_SIZE = 50;
+const ROW_PX = 52;
+const HEAD_PX = 36;
 
 const fieldClass =
-  'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 hover:border-slate-300 transition-all';
+  'h-9 shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 hover:border-slate-300 transition-all';
+
+function fitPageSize(height) {
+  const n = Math.floor((Number(height) - HEAD_PX) / ROW_PX);
+  return Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, Number.isFinite(n) ? n : MIN_PAGE_SIZE));
+}
 
 function pageNumbers(current, total) {
   if (total <= 1) return [1];
@@ -35,11 +43,13 @@ const FinanceSubscribers = () => {
   const [month, setMonth] = useState('');
   const [day, setDay] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(MIN_PAGE_SIZE);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
+  const tableAreaRef = useRef(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -59,7 +69,7 @@ const FinanceSubscribers = () => {
     const startedAt = Date.now();
     const params = {
       page,
-      pageSize: PAGE_SIZE,
+      pageSize,
       planId: planId || undefined,
       month: month || undefined,
       day: day || undefined,
@@ -106,9 +116,27 @@ const FinanceSubscribers = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, planId, month, day, search]);
+  }, [page, pageSize, planId, month, day, search]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const el = tableAreaRef.current;
+    if (!el) return undefined;
+    const measure = () => {
+      const next = fitPageSize(el.clientHeight);
+      setPageSize((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(total / pageSize) || 1);
+    if (page > maxPage) setPage(maxPage);
+  }, [page, pageSize, total]);
 
   const resetFilters = () => {
     setSearchInput('');
@@ -119,9 +147,9 @@ const FinanceSubscribers = () => {
     setPage(1);
   };
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const to = Math.min(page * PAGE_SIZE, total);
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
   const hasFilters = Boolean(search || planId || month || day);
   const pages = useMemo(() => pageNumbers(page, pageCount), [page, pageCount]);
 
@@ -146,21 +174,21 @@ const FinanceSubscribers = () => {
       </div>
 
       <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
-        <div className="shrink-0 px-3 py-2.5 border-b border-slate-100 flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+        <div className="shrink-0 px-3 py-2 border-b border-slate-100 flex flex-nowrap items-center gap-2 overflow-x-auto">
+          <div className="relative w-56 shrink-0">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="search"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search name or email"
-              className={`${fieldClass} pl-8`}
+              placeholder="Name or email"
+              className={`${fieldClass} w-full pl-8`}
             />
           </div>
           <select
             value={planId}
             onChange={(e) => { setPlanId(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-auto min-w-[140px] max-w-[180px]`}
+            className={`${fieldClass} w-36`}
             aria-label="Filter by plan"
           >
             <option value="">All plans</option>
@@ -168,36 +196,41 @@ const FinanceSubscribers = () => {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => { setMonth(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-auto min-w-[138px]`}
-            aria-label="Filter by month joined"
-            title="Joined month"
-          />
-          <input
-            type="date"
-            value={day}
-            onChange={(e) => { setDay(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-auto min-w-[138px]`}
-            aria-label="Filter by day joined"
-            title="Joined day"
-          />
+          <div className="h-5 w-px bg-slate-200 shrink-0 hidden sm:block" />
+          <label className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Month
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => { setMonth(e.target.value); setPage(1); }}
+              className={`${fieldClass} w-[9.75rem] font-normal normal-case tracking-normal`}
+              aria-label="Joined month"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Day
+            <input
+              type="date"
+              value={day}
+              onChange={(e) => { setDay(e.target.value); setPage(1); }}
+              className={`${fieldClass} w-[10.25rem] font-normal normal-case tracking-normal`}
+              aria-label="Joined day"
+            />
+          </label>
           {hasFilters && (
             <button
               onClick={resetFilters}
-              className="inline-flex items-center gap-1 h-9 px-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              className="inline-flex items-center gap-1 h-9 px-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 shrink-0"
             >
               <X className="w-3 h-3" /> Reset
             </button>
           )}
-          <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
+          <span className="ml-auto pl-2 text-xs text-slate-400 whitespace-nowrap shrink-0">
             {loading ? 'Loading…' : `${fmtNum(total)} subscriber${total !== 1 ? 's' : ''}`}
           </span>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+        <div ref={tableAreaRef} className="flex-1 min-h-0 overflow-auto custom-scrollbar">
           {err ? (
             <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-400 px-4">
               <AlertTriangle className="w-8 h-8 opacity-40" />
