@@ -16,6 +16,9 @@ const HEAD_PX = 36;
 
 const fieldClass =
   'h-9 shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 hover:border-slate-300 transition-all';
+const activeFieldClass = 'border-blue-400 bg-blue-50 text-blue-800 font-medium';
+
+const nameOf = (list, id) => (list || []).find((p) => String(p.id) === String(id))?.name;
 
 function fitPageSize(height) {
   const n = Math.floor((Number(height) - HEAD_PX) / ROW_PX);
@@ -164,6 +167,16 @@ const FinanceSubscribers = () => {
   const to = Math.min(page * pageSize, total);
   const hasFilters = Boolean(search || planId || topupPlanId || addonPlanId || month || day);
   const pages = useMemo(() => pageNumbers(page, pageCount), [page, pageCount]);
+  const activeChips = useMemo(() => {
+    const chips = [];
+    if (search) chips.push({ key: 'search', label: search, onClear: () => { setSearchInput(''); setSearch(''); setPage(1); } });
+    if (planId) chips.push({ key: 'plan', label: nameOf(plans, planId) || 'Monthly', onClear: () => { setPlanId(''); setPage(1); } });
+    if (topupPlanId) chips.push({ key: 'topup', label: nameOf(topupPlans, topupPlanId) || 'Top-up', onClear: () => { setTopupPlanId(''); setPage(1); } });
+    if (addonPlanId) chips.push({ key: 'addon', label: nameOf(addonPlans, addonPlanId) || 'Add-on', onClear: () => { setAddonPlanId(''); setPage(1); } });
+    if (month) chips.push({ key: 'month', label: month, onClear: () => { setMonth(''); setPage(1); } });
+    if (day) chips.push({ key: 'day', label: day, onClear: () => { setDay(''); setPage(1); } });
+    return chips;
+  }, [search, planId, topupPlanId, addonPlanId, month, day, plans, topupPlans, addonPlans]);
 
   return (
     <div className="h-[calc(100vh-5rem)] flex flex-col gap-2.5 min-h-0">
@@ -174,7 +187,7 @@ const FinanceSubscribers = () => {
           </div>
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-slate-800 leading-tight">Users & Plans</h1>
-            <p className="text-xs text-slate-500 truncate">Search subscribers, then filter by monthly, top-up, add-on, or join date.</p>
+            <p className="text-xs text-slate-500 truncate">Combine filters — e.g. Max + a top-up + an add-on. Results match all of them.</p>
           </div>
         </div>
         <button
@@ -200,7 +213,7 @@ const FinanceSubscribers = () => {
           <select
             value={planId}
             onChange={(e) => { setPlanId(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-[9.5rem]`}
+            className={`${fieldClass} w-[9.5rem] ${planId ? activeFieldClass : ''}`}
             aria-label="Filter by monthly plan"
           >
             <option value="">All monthly</option>
@@ -211,7 +224,7 @@ const FinanceSubscribers = () => {
           <select
             value={topupPlanId}
             onChange={(e) => { setTopupPlanId(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-[9.5rem]`}
+            className={`${fieldClass} w-[9.5rem] ${topupPlanId ? activeFieldClass : ''}`}
             aria-label="Filter by top-up plan"
           >
             <option value="">All top-ups</option>
@@ -222,7 +235,7 @@ const FinanceSubscribers = () => {
           <select
             value={addonPlanId}
             onChange={(e) => { setAddonPlanId(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-[9.5rem]`}
+            className={`${fieldClass} w-[9.5rem] ${addonPlanId ? activeFieldClass : ''}`}
             aria-label="Filter by add-on plan"
           >
             <option value="">All add-ons</option>
@@ -235,7 +248,7 @@ const FinanceSubscribers = () => {
             type="month"
             value={month}
             onChange={(e) => { setMonth(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-[9.5rem]`}
+            className={`${fieldClass} w-[9.5rem] ${month ? activeFieldClass : ''}`}
             aria-label="Joined month"
             title="Joined month"
           />
@@ -243,7 +256,7 @@ const FinanceSubscribers = () => {
             type="date"
             value={day}
             onChange={(e) => { setDay(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-[10rem]`}
+            className={`${fieldClass} w-[10rem] ${day ? activeFieldClass : ''}`}
             aria-label="Joined day"
             title="Joined day"
           />
@@ -256,9 +269,30 @@ const FinanceSubscribers = () => {
             </button>
           )}
           <span className="ml-auto pl-2 text-xs text-slate-400 whitespace-nowrap shrink-0">
-            {loading ? 'Loading…' : `${fmtNum(total)} subscriber${total !== 1 ? 's' : ''}`}
+            {loading ? 'Loading…' : hasFilters
+              ? `${fmtNum(total)} matching all filters`
+              : `${fmtNum(total)} subscriber${total !== 1 ? 's' : ''}`}
           </span>
         </div>
+        {activeChips.length > 0 && (
+          <div className="shrink-0 px-3 py-1.5 border-b border-slate-100 bg-slate-50/80 flex items-center gap-1.5 overflow-x-auto">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 shrink-0">All of</span>
+            {activeChips.map((chip, i) => (
+              <span key={chip.key} className="inline-flex items-center gap-1 shrink-0">
+                {i > 0 && <span className="text-[11px] font-semibold text-slate-400">+</span>}
+                <button
+                  type="button"
+                  onClick={chip.onClear}
+                  className="inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-md bg-white border border-blue-200 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                  title="Remove this filter"
+                >
+                  {chip.label}
+                  <X className="w-3 h-3 text-slate-400" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         <div ref={tableAreaRef} className="flex-1 min-h-0 overflow-auto custom-scrollbar">
           {err ? (
@@ -274,7 +308,7 @@ const FinanceSubscribers = () => {
           ) : rows.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-400">
               <Users className="w-8 h-8 opacity-30" />
-              <p className="text-sm">{hasFilters ? 'No subscribers match these filters.' : 'No monthly-plan subscribers yet.'}</p>
+              <p className="text-sm">{hasFilters ? 'No subscribers match all selected filters.' : 'No monthly-plan subscribers yet.'}</p>
             </div>
           ) : (
             <table className="w-full text-sm">
