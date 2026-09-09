@@ -126,7 +126,7 @@ const FinanceSubscribers = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, planId, topupPlanId, month, day, search]);
+  }, [page, pageSize, planId, topupPlanId, addonPlanId, month, day, search]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -153,6 +153,7 @@ const FinanceSubscribers = () => {
     setSearch('');
     setPlanId('');
     setTopupPlanId('');
+    setAddonPlanId('');
     setMonth('');
     setDay('');
     setPage(1);
@@ -161,7 +162,7 @@ const FinanceSubscribers = () => {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
-  const hasFilters = Boolean(search || planId || topupPlanId || month || day);
+  const hasFilters = Boolean(search || planId || topupPlanId || addonPlanId || month || day);
   const pages = useMemo(() => pageNumbers(page, pageCount), [page, pageCount]);
 
   return (
@@ -173,7 +174,7 @@ const FinanceSubscribers = () => {
           </div>
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-slate-800 leading-tight">Users & Plans</h1>
-            <p className="text-xs text-slate-500 truncate">Search subscribers, then filter by monthly plan, top-up, or join date.</p>
+            <p className="text-xs text-slate-500 truncate">Search subscribers, then filter by monthly, top-up, add-on, or join date.</p>
           </div>
         </div>
         <button
@@ -215,6 +216,17 @@ const FinanceSubscribers = () => {
           >
             <option value="">All top-ups</option>
             {topupPlans.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <select
+            value={addonPlanId}
+            onChange={(e) => { setAddonPlanId(e.target.value); setPage(1); }}
+            className={`${fieldClass} w-[9.5rem]`}
+            aria-label="Filter by add-on plan"
+          >
+            <option value="">All add-ons</option>
+            {addonPlans.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
