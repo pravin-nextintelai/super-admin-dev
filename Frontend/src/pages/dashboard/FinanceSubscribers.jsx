@@ -162,6 +162,12 @@ const FinanceSubscribers = () => {
     setPage(1);
   };
 
+  const handleRefresh = () => {
+    const alreadyClear = !searchInput && !search && !planId && !topupPlanId && !addonPlanId && !month && !day;
+    resetFilters();
+    if (alreadyClear) load();
+  };
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
@@ -187,11 +193,11 @@ const FinanceSubscribers = () => {
           </div>
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-slate-800 leading-tight">Users & Plans</h1>
-            <p className="text-xs text-slate-500 truncate">Combine filters — e.g. Max + a top-up + an add-on. Results match all of them.</p>
+            <p className="text-xs text-slate-500 truncate">All monthly-plan subscribers. Filters stay off until you pick one.</p>
           </div>
         </div>
         <button
-          onClick={load}
+          onClick={handleRefresh}
           className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors shrink-0"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
@@ -213,34 +219,34 @@ const FinanceSubscribers = () => {
           <select
             value={planId}
             onChange={(e) => { setPlanId(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-[9.5rem] ${planId ? activeFieldClass : ''}`}
+            className={`${fieldClass} w-[9.5rem] ${planId ? activeFieldClass : 'text-slate-400'}`}
             aria-label="Filter by monthly plan"
           >
-            <option value="">All monthly</option>
+            <option value="">Monthly plan</option>
             {plans.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id} className="text-slate-700">{p.name}</option>
             ))}
           </select>
           <select
             value={topupPlanId}
             onChange={(e) => { setTopupPlanId(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-[9.5rem] ${topupPlanId ? activeFieldClass : ''}`}
+            className={`${fieldClass} w-[9.5rem] ${topupPlanId ? activeFieldClass : 'text-slate-400'}`}
             aria-label="Filter by top-up plan"
           >
-            <option value="">All top-ups</option>
+            <option value="">Top-up</option>
             {topupPlans.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id} className="text-slate-700">{p.name}</option>
             ))}
           </select>
           <select
             value={addonPlanId}
             onChange={(e) => { setAddonPlanId(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-[9.5rem] ${addonPlanId ? activeFieldClass : ''}`}
+            className={`${fieldClass} w-[9.5rem] ${addonPlanId ? activeFieldClass : 'text-slate-400'}`}
             aria-label="Filter by add-on plan"
           >
-            <option value="">All add-ons</option>
+            <option value="">Add-on</option>
             {addonPlans.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id} className="text-slate-700">{p.name}</option>
             ))}
           </select>
           <div className="h-5 w-px bg-slate-200 shrink-0 hidden sm:block" />
