@@ -194,6 +194,12 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
       roles: ['super-admin', 'account-admin', 'finance-admin']
     },
     {
+      name: 'Users & Plans',
+      path: '/dashboard/subscriptions/users',
+      icon: Users,
+      roles: ['super-admin', 'account-admin', 'finance-admin']
+    },
+    {
       name: 'Support & Help',
       path: '/dashboard/support', // Assuming a path for support and help
       icon: LifeBuoy,

@@ -39,3 +39,13 @@ export const fetchPlanSummary = () => req(`${PBASE}/summary`);
 export const fetchMonthlySubscribers = (planId) => req(`${PBASE}/monthly/${planId}/subscribers`);
 export const fetchTopupBuyers = (planId) => req(`${PBASE}/topup/${planId}/buyers`);
 export const fetchAddonBuyers = (planId) => req(`${PBASE}/addon/${planId}/buyers`);
+
+export const fetchPlanSubscribers = (params = {}) => {
+  const q = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value == null || value === '') return;
+    q.set(key, String(value));
+  });
+  const qs = q.toString();
+  return req(`${PBASE}/subscribers${qs ? `?${qs}` : ''}`);
+};

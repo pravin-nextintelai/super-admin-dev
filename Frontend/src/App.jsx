@@ -8,6 +8,7 @@ import DashboardContent from './pages/dashboard/DashboardContent';
 import UserManagement from './pages/dashboard/UserManagement';
 import UserAnalytics from './pages/dashboard/UserAnalytics';
 import PlanAnalytics from './pages/dashboard/PlanAnalytics';
+import FinanceSubscribers from './pages/dashboard/FinanceSubscribers';
 import AdminManagement from './components/auth/Admins/AdminManagement';
 import ContentManagement from './pages/dashboard/ContentManagement';
 import TemplateManagement from './pages/dashboard/TemplateManagement/index';
@@ -119,8 +120,8 @@ function App() {
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<DashboardIndex />} />
             <Route path="users" element={<RequireRole allow={['user-admin']}><UserManagement /></RequireRole>} />
-            <Route path="users/:userId/analytics" element={<RequireRole allow={['user-admin', 'finance-admin']}><UserAnalytics /></RequireRole>} />
-            <Route path="firms/:firmId/analytics" element={<RequireRole allow={['user-admin', 'finance-admin']}><UserAnalytics mode="firm" /></RequireRole>} />
+            <Route path="users/:userId/analytics" element={<RequireRole allow={['user-admin', 'account-admin', 'finance-admin']}><UserAnalytics /></RequireRole>} />
+            <Route path="firms/:firmId/analytics" element={<RequireRole allow={['user-admin', 'account-admin', 'finance-admin']}><UserAnalytics mode="firm" /></RequireRole>} />
             <Route path="admins" element={<RequireRole allow={[]}><AdminManagement /></RequireRole>} />
             <Route path="content" element={<RequireRole allow={['user-admin']}><ContentManagement /></RequireRole>} />
             <Route path="content/case-type" element={<RequireRole allow={['user-admin']}><AddCaseType /></RequireRole>} />
@@ -129,6 +130,7 @@ function App() {
             <Route path="templates" element={<RequireRole allow={[]}><TemplateManagement /></RequireRole>} />
             <Route path="subscriptions" element={<RequireRole allow={['account-admin', 'finance-admin']}><SubscriptionManagement /></RequireRole>} />
             <Route path="subscriptions/analytics" element={<RequireRole allow={['account-admin', 'finance-admin']}><PlanAnalytics /></RequireRole>} />
+            <Route path="subscriptions/users" element={<RequireRole allow={['account-admin', 'finance-admin']}><FinanceSubscribers /></RequireRole>} />
             <Route path="prompts" element={<RequireRole allow={[]}><PromptManagement /></RequireRole>} />
             <Route path="agent-prompts" element={<RequireRole allow={[]}><AgentList /></RequireRole>} />
             <Route path="system-prompts" element={<RequireRole allow={[]}><SystemPromptManagement /></RequireRole>} />

@@ -322,6 +322,161 @@ exports.getAddonBuyers = async (req, res, pools) => {
     }
 };
 
+const clampPage = (v, def = 1) => {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) && n >= 1 ? n : def;
+};
+const clampPageSize = (v, def = 25) => {
+    const n = parseInt(v, 10);
+    if (!Number.isFinite(n) || n < 1) return def;
+    return Math.min(n, 50);
+};
+const MONTH_RE = /^\d{4}-\d{2}$/;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * GET /subscribers — paginated list of monthly-plan subscribers (all plans).
+ * Query: page, pageSize, planId, month (YYYY-MM), day (YYYY-MM-DD), search, status.
+ * Day overrides month. Search matches Auth DB username/email then filters Payment rows.
+ */
+exports.getSubscribers = async (req, res, pools) => {
+    const page = clampPage(req.query.page);
+    const pageSize = clampPageSize(req.query.pageSize);
+    const offset = (page - 1) * pageSize;
+    const planIdRaw = parseInt(req.query.planId, 10);
+    const planId = Number.isFinite(planIdRaw) ? planIdRaw : null;
+    const day = DAY_RE.test(String(req.query.day || '').trim()) ? String(req.query.day).trim() : null;
+    const month = !day && MONTH_RE.test(String(req.query.month || '').trim()) ? String(req.query.month).trim() : null;
+    const search = String(req.query.search || '').trim().slice(0, 120);
+    const status = String(req.query.status || '').trim().toLowerCase() || null;
+
+    try {
+        let searchIds = null;
+        if (search) {
+            const { rows: matched } = await pools.authPool.query(
+                `SELECT id FROM users
+                 WHERE username ILIKE $1 OR email ILIKE $1
+                 LIMIT 500`,
+                [`%${search}%`]
+            );
+            searchIds = matched.map((r) => r.id);
+            if (!searchIds.length) {
+                const plans = await pools.paymentPool.query(
+                    `SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`
+                );
+                logPortalFlow(req, 'Plan analytics subscribers list loaded', {
+                    layer: 'PLAN_ANALYTICS',
+                    summary: { page, pageSize, planId, month, day, search, status, total: 0, rowCount: 0 },
+                });
+                return res.status(200).json({
+                    success: true,
+                    data: {
+                        rows: [],
+                        total: 0,
+                        page,
+                        pageSize,
+                        filters: { plans: plans.rows },
+                    },
+                });
+            }
+        }
+
+        const where = [];
+        const params = [];
+        const add = (clause, value) => {
+            params.push(value);
+            where.push(clause.replace('$?', `$${params.length}`));
+        };
+
+        where.push('us.monthly_plan_id IS NOT NULL');
+        if (planId != null) add('us.monthly_plan_id = $?', planId);
+        if (status) add('LOWER(COALESCE(us.status, \'\')) = $?', status);
+        if (searchIds) add('us.user_id = ANY($?::int[])', searchIds);
+        const joinedIst = `(COALESCE(us.created_at, us.start_date) AT TIME ZONE 'Asia/Kolkata')`;
+        if (day) add(`${joinedIst}::date = $?::date`, day);
+        else if (month) add(`to_char(${joinedIst}, 'YYYY-MM') = $?`, month);
+
+        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+        const countRes = await pools.paymentPool.query(
+            `SELECT COUNT(*)::int AS total
+             FROM user_subscriptions us
+             ${whereSql}`,
+            params
+        );
+        const total = countRes.rows[0]?.total || 0;
+
+        const listParams = [...params, pageSize, offset];
+        const limitIdx = params.length + 1;
+        const offsetIdx = params.length + 2;
+        const { rows } = await pools.paymentPool.query(
+            `SELECT us.user_id,
+                    us.status,
+                    us.start_date,
+                    us.end_date,
+                    us.created_at,
+                    COALESCE(us.created_at, us.start_date) AS joined_at,
+                    COALESCE(us.current_token_balance, 0)::bigint AS current_token_balance,
+                    COALESCE(us.topup_token_balance, 0)::bigint AS topup_token_balance,
+                    mp.id AS plan_id,
+                    mp.name AS plan_name,
+                    mp.category AS plan_category,
+                    mp.price AS plan_price,
+                    mp.currency AS plan_currency
+             FROM user_subscriptions us
+             JOIN monthly_plans mp ON mp.id = us.monthly_plan_id
+             ${whereSql}
+             ORDER BY COALESCE(us.created_at, us.start_date) DESC NULLS LAST, us.user_id DESC
+             LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+            listParams
+        );
+
+        const enriched = await attachUsers(rows, pools.authPool);
+        const plans = await pools.paymentPool.query(
+            `SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`
+        );
+
+        logPortalFlow(req, 'Plan analytics subscribers list loaded', {
+            layer: 'PLAN_ANALYTICS',
+            summary: {
+                page,
+                pageSize,
+                planId,
+                month,
+                day,
+                search: search || null,
+                status,
+                total,
+                rowCount: enriched.length,
+            },
+            table: enriched.slice(0, 8).map((r) => ({
+                user_id: r.user_id,
+                email: r.email,
+                plan_name: r.plan_name,
+                status: r.status,
+            })),
+        });
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                rows: enriched,
+                total,
+                page,
+                pageSize,
+                filters: { plans: plans.rows },
+            },
+        });
+    } catch (e) {
+        logger.errorWithContext('Plan analytics subscribers list failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { page, pageSize, planId, month, day, search: search || null, status },
+        });
+        return res.status(500).json({ success: false, message: e.message });
+    }
+};
+
 exports.getTopupBuyers = async (req, res, pools) => {
     const planId = parseInt(req.params.planId, 10);
     if (!Number.isFinite(planId)) return res.status(400).json({ success: false, message: 'Invalid plan id' });
