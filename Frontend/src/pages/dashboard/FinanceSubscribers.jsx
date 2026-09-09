@@ -40,6 +40,7 @@ const FinanceSubscribers = () => {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [planId, setPlanId] = useState('');
+  const [topupPlanId, setTopupPlanId] = useState('');
   const [month, setMonth] = useState('');
   const [day, setDay] = useState('');
   const [page, setPage] = useState(1);
@@ -47,6 +48,7 @@ const FinanceSubscribers = () => {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [plans, setPlans] = useState([]);
+  const [topupPlans, setTopupPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const tableAreaRef = useRef(null);
@@ -71,6 +73,7 @@ const FinanceSubscribers = () => {
       page,
       pageSize,
       planId: planId || undefined,
+      topupPlanId: topupPlanId || undefined,
       month: month || undefined,
       day: day || undefined,
       search: search || undefined,
@@ -86,6 +89,7 @@ const FinanceSubscribers = () => {
       setRows(list);
       setTotal(Number(data.total) || 0);
       setPlans(Array.isArray(data.filters?.plans) ? data.filters.plans : []);
+      setTopupPlans(Array.isArray(data.filters?.topupPlans) ? data.filters.topupPlans : []);
       financeSubscribersLogger.flow('list:load:success', {
         summary: {
           role: localStorage.getItem('userRole'),
@@ -93,6 +97,7 @@ const FinanceSubscribers = () => {
           page: data.page,
           pageSize: data.pageSize,
           planId: planId || null,
+          topupPlanId: topupPlanId || null,
           month: month || null,
           day: day || null,
           search: search || null,
@@ -116,7 +121,7 @@ const FinanceSubscribers = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, planId, month, day, search]);
+  }, [page, pageSize, planId, topupPlanId, month, day, search]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -142,6 +147,7 @@ const FinanceSubscribers = () => {
     setSearchInput('');
     setSearch('');
     setPlanId('');
+    setTopupPlanId('');
     setMonth('');
     setDay('');
     setPage(1);
@@ -150,7 +156,7 @@ const FinanceSubscribers = () => {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
-  const hasFilters = Boolean(search || planId || month || day);
+  const hasFilters = Boolean(search || planId || topupPlanId || month || day);
   const pages = useMemo(() => pageNumbers(page, pageCount), [page, pageCount]);
 
   return (
@@ -162,7 +168,7 @@ const FinanceSubscribers = () => {
           </div>
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-slate-800 leading-tight">Users & Plans</h1>
-            <p className="text-xs text-slate-500 truncate">Monthly-plan subscribers — search, then filter by plan or join date.</p>
+            <p className="text-xs text-slate-500 truncate">Search subscribers, then filter by monthly plan, top-up, or join date.</p>
           </div>
         </div>
         <button
@@ -174,8 +180,8 @@ const FinanceSubscribers = () => {
       </div>
 
       <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
-        <div className="shrink-0 px-3 py-2 border-b border-slate-100 flex flex-nowrap items-center gap-2 overflow-x-auto">
-          <div className="relative w-56 shrink-0">
+        <div className="shrink-0 px-3 py-2 border-b border-slate-100 flex flex-nowrap items-center gap-1.5 overflow-x-auto">
+          <div className="relative w-52 shrink-0">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="search"
@@ -188,35 +194,42 @@ const FinanceSubscribers = () => {
           <select
             value={planId}
             onChange={(e) => { setPlanId(e.target.value); setPage(1); }}
-            className={`${fieldClass} w-36`}
-            aria-label="Filter by plan"
+            className={`${fieldClass} w-[9.5rem]`}
+            aria-label="Filter by monthly plan"
           >
-            <option value="">All plans</option>
+            <option value="">All monthly</option>
             {plans.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+          <select
+            value={topupPlanId}
+            onChange={(e) => { setTopupPlanId(e.target.value); setPage(1); }}
+            className={`${fieldClass} w-[9.5rem]`}
+            aria-label="Filter by top-up plan"
+          >
+            <option value="">All top-ups</option>
+            {topupPlans.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
           <div className="h-5 w-px bg-slate-200 shrink-0 hidden sm:block" />
-          <label className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            Month
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => { setMonth(e.target.value); setPage(1); }}
-              className={`${fieldClass} w-[9.75rem] font-normal normal-case tracking-normal`}
-              aria-label="Joined month"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            Day
-            <input
-              type="date"
-              value={day}
-              onChange={(e) => { setDay(e.target.value); setPage(1); }}
-              className={`${fieldClass} w-[10.25rem] font-normal normal-case tracking-normal`}
-              aria-label="Joined day"
-            />
-          </label>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => { setMonth(e.target.value); setPage(1); }}
+            className={`${fieldClass} w-[9.5rem]`}
+            aria-label="Joined month"
+            title="Joined month"
+          />
+          <input
+            type="date"
+            value={day}
+            onChange={(e) => { setDay(e.target.value); setPage(1); }}
+            className={`${fieldClass} w-[10rem]`}
+            aria-label="Joined day"
+            title="Joined day"
+          />
           {hasFilters && (
             <button
               onClick={resetFilters}

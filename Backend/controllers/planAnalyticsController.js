@@ -334,10 +334,19 @@ const clampPageSize = (v, def = 25) => {
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+async function loadSubscriberFacets(paymentPool) {
+    const [plans, topupPlans] = await Promise.all([
+        paymentPool.query(`SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`),
+        paymentPool.query(`SELECT id, name FROM topup_plans ORDER BY sort_order ASC, id ASC`),
+    ]);
+    return { plans: plans.rows, topupPlans: topupPlans.rows };
+}
+
 /**
  * GET /subscribers — paginated list of monthly-plan subscribers (all plans).
- * Query: page, pageSize, planId, month (YYYY-MM), day (YYYY-MM-DD), search, status.
+ * Query: page, pageSize, planId, topupPlanId, month (YYYY-MM), day (YYYY-MM-DD), search, status.
  * Day overrides month. Search matches Auth DB username/email then filters Payment rows.
+ * topupPlanId keeps monthly subscribers who bought that top-up pack.
  */
 exports.getSubscribers = async (req, res, pools) => {
     const page = clampPage(req.query.page);
@@ -345,6 +354,8 @@ exports.getSubscribers = async (req, res, pools) => {
     const offset = (page - 1) * pageSize;
     const planIdRaw = parseInt(req.query.planId, 10);
     const planId = Number.isFinite(planIdRaw) ? planIdRaw : null;
+    const topupPlanIdRaw = parseInt(req.query.topupPlanId, 10);
+    const topupPlanId = Number.isFinite(topupPlanIdRaw) ? topupPlanIdRaw : null;
     const day = DAY_RE.test(String(req.query.day || '').trim()) ? String(req.query.day).trim() : null;
     const month = !day && MONTH_RE.test(String(req.query.month || '').trim()) ? String(req.query.month).trim() : null;
     const search = String(req.query.search || '').trim().slice(0, 120);
@@ -361,12 +372,10 @@ exports.getSubscribers = async (req, res, pools) => {
             );
             searchIds = matched.map((r) => r.id);
             if (!searchIds.length) {
-                const plans = await pools.paymentPool.query(
-                    `SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`
-                );
+                const facets = await loadSubscriberFacets(pools.paymentPool);
                 logPortalFlow(req, 'Plan analytics subscribers list loaded', {
                     layer: 'PLAN_ANALYTICS',
-                    summary: { page, pageSize, planId, month, day, search, status, total: 0, rowCount: 0 },
+                    summary: { page, pageSize, planId, topupPlanId, month, day, search, status, total: 0, rowCount: 0 },
                 });
                 return res.status(200).json({
                     success: true,
@@ -375,7 +384,7 @@ exports.getSubscribers = async (req, res, pools) => {
                         total: 0,
                         page,
                         pageSize,
-                        filters: { plans: plans.rows },
+                        filters: facets,
                     },
                 });
             }
@@ -390,6 +399,15 @@ exports.getSubscribers = async (req, res, pools) => {
 
         where.push('us.monthly_plan_id IS NOT NULL');
         if (planId != null) add('us.monthly_plan_id = $?', planId);
+        if (topupPlanId != null) {
+            add(
+                `EXISTS (
+                    SELECT 1 FROM user_token_topup_purchases up
+                    WHERE up.user_id = us.user_id AND up.topup_plan_id = $?
+                )`,
+                topupPlanId
+            );
+        }
         if (status) add('LOWER(COALESCE(us.status, \'\')) = $?', status);
         if (searchIds) add('us.user_id = ANY($?::int[])', searchIds);
         const joinedIst = `(COALESCE(us.created_at, us.start_date) AT TIME ZONE 'Asia/Kolkata')`;
@@ -432,9 +450,7 @@ exports.getSubscribers = async (req, res, pools) => {
         );
 
         const enriched = await attachUsers(rows, pools.authPool);
-        const plans = await pools.paymentPool.query(
-            `SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`
-        );
+        const facets = await loadSubscriberFacets(pools.paymentPool);
 
         logPortalFlow(req, 'Plan analytics subscribers list loaded', {
             layer: 'PLAN_ANALYTICS',
@@ -442,6 +458,7 @@ exports.getSubscribers = async (req, res, pools) => {
                 page,
                 pageSize,
                 planId,
+                topupPlanId,
                 month,
                 day,
                 search: search || null,
@@ -464,14 +481,14 @@ exports.getSubscribers = async (req, res, pools) => {
                 total,
                 page,
                 pageSize,
-                filters: { plans: plans.rows },
+                filters: facets,
             },
         });
     } catch (e) {
         logger.errorWithContext('Plan analytics subscribers list failed', e, {
             requestId: req.requestId,
             layer: 'PLAN_ANALYTICS',
-            summary: { page, pageSize, planId, month, day, search: search || null, status },
+            summary: { page, pageSize, planId, topupPlanId, month, day, search: search || null, status },
         });
         return res.status(500).json({ success: false, message: e.message });
     }

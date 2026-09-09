@@ -213,7 +213,7 @@ Mounted at `/api/admin/plan-analytics`. Roles: `super-admin`, `user-admin`, `acc
 | `GET` | `/topup/:planId/buyers` |
 | `GET` | `/addon/:planId/buyers` |
 
-`GET /subscribers` is the paginated Users & Plans list. Query: `page`, `pageSize` (max 50), `planId`, `month` (`YYYY-MM`), `day` (`YYYY-MM-DD`, overrides month), `search` (username/email), optional `status`. Response includes `data.rows`, `data.total`, and `data.filters.plans`.
+`GET /subscribers` is the paginated Users & Plans list. Query: `page`, `pageSize` (max 50), `planId`, `topupPlanId` (bought that top-up pack), `month` (`YYYY-MM`), `day` (`YYYY-MM-DD`, overrides month), `search` (username/email), optional `status`. Response includes `data.rows`, `data.total`, `data.filters.plans`, and `data.filters.topupPlans`.
 
 User billing drill-in: `/api/admin/user-analytics/*` allows `super-admin`, `user-admin`, `account-admin`, `finance-admin`.
 
