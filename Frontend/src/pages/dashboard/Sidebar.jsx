@@ -25,6 +25,7 @@ import {
   Mic,
   KeyRound,
   BarChart3,
+  Contact,
 } from 'lucide-react';
 import { createDebugLogger } from '../../utils/debugLogger';
 
@@ -196,7 +197,7 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
     {
       name: 'Users & Plans',
       path: '/dashboard/subscriptions/users',
-      icon: Users,
+      icon: Contact,
       roles: ['super-admin', 'account-admin', 'finance-admin']
     },
     {

@@ -26,11 +26,16 @@ const FinanceSubscribers = () => {
   const [err, setErr] = useState(null);
 
   useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    const t = setTimeout(() => {
+      const next = searchInput.trim();
+      setSearch((prev) => {
+        if (prev === next) return prev;
+        setPage(1);
+        return next;
+      });
+    }, 300);
     return () => clearTimeout(t);
   }, [searchInput]);
-
-  useEffect(() => { setPage(1); }, [search, planId, month, day]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -153,7 +158,7 @@ const FinanceSubscribers = () => {
             <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Plan</span>
             <select
               value={planId}
-              onChange={(e) => setPlanId(e.target.value)}
+              onChange={(e) => { setPlanId(e.target.value); setPage(1); }}
               className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
             >
               <option value="">All plans</option>
@@ -167,7 +172,7 @@ const FinanceSubscribers = () => {
             <input
               type="month"
               value={month}
-              onChange={(e) => setMonth(e.target.value)}
+              onChange={(e) => { setMonth(e.target.value); setPage(1); }}
               className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
             />
           </label>
@@ -176,7 +181,7 @@ const FinanceSubscribers = () => {
             <input
               type="date"
               value={day}
-              onChange={(e) => setDay(e.target.value)}
+              onChange={(e) => { setDay(e.target.value); setPage(1); }}
               className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
             />
           </label>
