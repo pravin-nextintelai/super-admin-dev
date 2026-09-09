@@ -9,21 +9,13 @@ import { fetchPlanSubscribers } from './userAnalytics/analyticsApi';
 import { createDebugLogger } from '../../utils/debugLogger';
 
 const financeSubscribersLogger = createDebugLogger('FinanceSubscribers');
-const MIN_PAGE_SIZE = 8;
-const MAX_PAGE_SIZE = 50;
-const ROW_PX = 52;
-const HEAD_PX = 36;
+const PAGE_SIZE = 50;
 
 const fieldClass =
   'h-9 shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 hover:border-slate-300 transition-all';
 const activeFieldClass = 'border-blue-400 bg-blue-50 text-blue-800 font-medium';
 
 const nameOf = (list, id) => (list || []).find((p) => String(p.id) === String(id))?.name;
-
-function fitPageSize(height) {
-  const n = Math.floor((Number(height) - HEAD_PX) / ROW_PX);
-  return Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, Number.isFinite(n) ? n : MIN_PAGE_SIZE));
-}
 
 function pageNumbers(current, total) {
   if (total <= 1) return [1];
@@ -48,7 +40,6 @@ const FinanceSubscribers = () => {
   const [month, setMonth] = useState('');
   const [day, setDay] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(MIN_PAGE_SIZE);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [plans, setPlans] = useState([]);
@@ -56,7 +47,7 @@ const FinanceSubscribers = () => {
   const [addonPlans, setAddonPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const tableAreaRef = useRef(null);
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -71,12 +62,13 @@ const FinanceSubscribers = () => {
   }, [searchInput]);
 
   const load = useCallback(async () => {
+    const reqId = ++reqIdRef.current;
     setLoading(true);
     setErr(null);
     const startedAt = Date.now();
     const params = {
       page,
-      pageSize,
+      pageSize: PAGE_SIZE,
       planId: planId || undefined,
       topupPlanId: topupPlanId || undefined,
       addonPlanId: addonPlanId || undefined,
@@ -90,6 +82,7 @@ const FinanceSubscribers = () => {
     });
     try {
       const r = await fetchPlanSubscribers(params);
+      if (reqId !== reqIdRef.current) return;
       const data = r.data || {};
       const list = Array.isArray(data.rows) ? data.rows : [];
       setRows(list);
@@ -120,6 +113,7 @@ const FinanceSubscribers = () => {
         metrics: { durationMs: Date.now() - startedAt },
       });
     } catch (e) {
+      if (reqId !== reqIdRef.current) return;
       financeSubscribersLogger.error('list:load:failed', e, {
         summary: { role: localStorage.getItem('userRole'), ...params },
       });
@@ -127,29 +121,16 @@ const FinanceSubscribers = () => {
       setRows([]);
       setTotal(0);
     } finally {
-      setLoading(false);
+      if (reqId === reqIdRef.current) setLoading(false);
     }
-  }, [page, pageSize, planId, topupPlanId, addonPlanId, month, day, search]);
+  }, [page, planId, topupPlanId, addonPlanId, month, day, search]);
 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    const el = tableAreaRef.current;
-    if (!el) return undefined;
-    const measure = () => {
-      const next = fitPageSize(el.clientHeight);
-      setPageSize((prev) => (prev === next ? prev : next));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(total / pageSize) || 1);
+    const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE) || 1);
     if (page > maxPage) setPage(maxPage);
-  }, [page, pageSize, total]);
+  }, [page, total]);
 
   const resetFilters = () => {
     setSearchInput('');
@@ -168,9 +149,9 @@ const FinanceSubscribers = () => {
     if (alreadyClear) load();
   };
 
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, total);
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const from = total === 0 || rows.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const to = rows.length === 0 ? 0 : from + rows.length - 1;
   const hasFilters = Boolean(search || planId || topupPlanId || addonPlanId || month || day);
   const pages = useMemo(() => pageNumbers(page, pageCount), [page, pageCount]);
   const activeChips = useMemo(() => {
@@ -300,7 +281,7 @@ const FinanceSubscribers = () => {
           </div>
         )}
 
-        <div ref={tableAreaRef} className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
           {err ? (
             <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-400 px-4">
               <AlertTriangle className="w-8 h-8 opacity-40" />
