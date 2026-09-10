@@ -7,7 +7,7 @@
 // plans, payments, llm_usage_logs), Document DB (user_files/file_chats/chunk_vectors),
 // Draft DB (generated_documents/user_drafts), Citation DB (citation_reports).
 //
-// Pools are passed in: { authPool, paymentPool, aiDocumentPool, draftPool, citationPool }.
+// Pools are passed in: { authPool, paymentPool, docPool, draftPool, citationPool }.
 
 /* ── helpers ── */
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -286,50 +286,52 @@ function buildPaymentsPayload(planRows, topupRows, addonRows) {
 /* ── storage (heavy, cross-DB; each slice independently fail-safe) ── */
 
 async function computeStorage(userIds, pools, errors) {
-    const { aiDocumentPool, draftPool, citationPool } = pools;
+    const { draftPool, citationPool } = pools;
+    const docPool = pools.docPool || require('../config/docDB');
+    const idsText = userIds.map(String);
 
     const files = await safeSection('files', async () => {
-        const { rows } = await aiDocumentPool.query(
+        const { rows } = await docPool.query(
             `SELECT
                COALESCE(SUM(size),0)::bigint AS total_bytes,
                COUNT(*)::int AS total_count,
                COALESCE(SUM(size) FILTER (WHERE COALESCE(gcs_path,'') LIKE 'chat-uploads/%'),0)::bigint AS chat_bytes,
                COUNT(*) FILTER (WHERE COALESCE(gcs_path,'') LIKE 'chat-uploads/%')::int AS chat_count,
-               COALESCE(SUM(size) FILTER (WHERE COALESCE(gcs_path,'') ~ ('^' || user_id || '/documents/')),0)::bigint AS doc_bytes,
-               COUNT(*) FILTER (WHERE COALESCE(gcs_path,'') ~ ('^' || user_id || '/documents/'))::int AS doc_count,
+               COALESCE(SUM(size) FILTER (WHERE COALESCE(gcs_path,'') ~ ('^' || user_id::text || '/documents/')),0)::bigint AS doc_bytes,
+               COUNT(*) FILTER (WHERE COALESCE(gcs_path,'') ~ ('^' || user_id::text || '/documents/'))::int AS doc_count,
                COALESCE(SUM(size) FILTER (WHERE COALESCE(gcs_path,'') LIKE 'uploads/%'),0)::bigint AS upload_bytes,
                COUNT(*) FILTER (WHERE COALESCE(gcs_path,'') LIKE 'uploads/%')::int AS upload_count,
                COALESCE(SUM(size) FILTER (
                  WHERE COALESCE(gcs_path,'') NOT LIKE 'chat-uploads/%'
-                   AND NOT (COALESCE(gcs_path,'') ~ ('^' || user_id || '/documents/'))
+                   AND NOT (COALESCE(gcs_path,'') ~ ('^' || user_id::text || '/documents/'))
                    AND COALESCE(gcs_path,'') NOT LIKE 'uploads/%'),0)::bigint AS other_bytes,
                COUNT(*) FILTER (
                  WHERE COALESCE(gcs_path,'') NOT LIKE 'chat-uploads/%'
-                   AND NOT (COALESCE(gcs_path,'') ~ ('^' || user_id || '/documents/'))
+                   AND NOT (COALESCE(gcs_path,'') ~ ('^' || user_id::text || '/documents/'))
                    AND COALESCE(gcs_path,'') NOT LIKE 'uploads/%')::int AS other_count
              FROM user_files
-             WHERE user_id = ANY($1::text[]) AND (is_folder IS NULL OR is_folder = false)`,
-            [userIds]
+             WHERE user_id::text = ANY($1::text[]) AND (is_folder IS NULL OR is_folder = false)`,
+            [idsText]
         );
         return rows[0];
     }, errors);
 
     const chats = await safeSection('chat_text', async () => {
-        const { rows } = await aiDocumentPool.query(
+        const { rows } = await docPool.query(
             `SELECT COUNT(*)::int AS cnt,
                     COALESCE(SUM(OCTET_LENGTH(COALESCE(question,'')) + OCTET_LENGTH(COALESCE(answer,''))),0)::bigint AS bytes
-             FROM file_chats WHERE user_id = ANY($1::int[])`,
-            [userIds]
+             FROM file_chats WHERE user_id::text = ANY($1::text[])`,
+            [idsText]
         );
         return rows[0];
     }, errors);
 
     const vectors = await safeSection('vectors', async () => {
-        const { rows } = await aiDocumentPool.query(
+        const { rows } = await docPool.query(
             `SELECT COUNT(*)::int AS cnt
              FROM chunk_vectors cv JOIN user_files uf ON cv.file_id = uf.id
-             WHERE uf.user_id = ANY($1::text[])`,
-            [userIds]
+             WHERE uf.user_id::text = ANY($1::text[])`,
+            [idsText]
         );
         return rows[0];
     }, errors);

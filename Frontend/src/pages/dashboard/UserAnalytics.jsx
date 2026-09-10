@@ -349,8 +349,10 @@ const StorageView = ({ storage, loading, error, onRetry }) => {
   if (error) return <EmptyState icon={AlertTriangle} text={`Storage failed to load: ${error}`} />;
   if (!storage) return <button onClick={onRetry} className="text-sm text-blue-600 hover:underline">Load storage</button>;
   const donut = storage.breakdown.filter((b) => b.bytes > 0).map((b) => ({ name: b.label, value: b.bytes }));
+  const filesOk = storage.breakdown.filter((b) => ['documents', 'chat_uploads', 'uploads', 'other'].includes(b.key)).every((b) => b.ok);
   return (
     <div className="space-y-4">
+      <SectionErrorBanner errors={storage.section_errors} />
       <div className={`rounded-xl border p-5 shadow-sm ${storage.over_limit ? 'bg-red-50/40 border-red-200' : 'bg-white border-slate-200'}`}>
         <div className="flex items-baseline justify-between flex-wrap gap-2 mb-3">
           <div className="flex items-baseline gap-2">
@@ -370,7 +372,11 @@ const StorageView = ({ storage, loading, error, onRetry }) => {
         )}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="What's using storage"><Donut data={donut} valueFormatter={(v) => fmtBytes(v)} /></ChartCard>
+        <ChartCard title="What's using storage">
+          {donut.length
+            ? <Donut data={donut} valueFormatter={(v) => fmtBytes(v)} />
+            : <EmptyState text={filesOk ? 'No files stored yet.' : 'File usage could not be loaded from Document DB.'} />}
+        </ChartCard>
         <ChartCard title="Breakdown">
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -429,7 +435,10 @@ const UserAnalytics = ({ mode: modeProp }) => {
   const loadStorage = useCallback(async (targetUserId) => {
     if (!targetUserId) return;
     setStorageLoading(true); setStorageErr(null);
-    try { const res = await fetchUserStorage(targetUserId); setStorage(res.data); }
+    try {
+      const res = await fetchUserStorage(targetUserId);
+      setStorage({ ...res.data, section_errors: res.meta?.section_errors || [] });
+    }
     catch (e) { setStorageErr(e.message || 'Failed'); }
     finally { setStorageLoading(false); }
   }, []);
