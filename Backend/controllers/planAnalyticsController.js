@@ -351,7 +351,9 @@ function parseSubscriberQuery(query) {
         day,
         month: !day && MONTH_RE.test(String(query.month || '').trim()) ? String(query.month).trim() : null,
         search: String(query.search || '').trim().slice(0, 120),
-        status: String(query.status || '').trim().toLowerCase() || null,
+        status: /^[a-z0-9_]{1,32}$/.test(String(query.status || '').trim().toLowerCase())
+            ? String(query.status).trim().toLowerCase()
+            : null,
     };
 }
 
@@ -458,9 +460,19 @@ async function loadSubscriberFacets(paymentPool) {
     const [plans, topupPlans, addonRes] = await Promise.all([
         paymentPool.query(`SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`),
         paymentPool.query(`SELECT id, name FROM topup_plans ORDER BY sort_order ASC, id ASC`),
+    const [addonRes, statusRes] = await Promise.all([
         paymentPool.query(`SELECT id, name FROM addon_plans ORDER BY sort_order ASC, id ASC`).catch(() => ({ rows: [] })),
+        paymentPool.query(
+            `SELECT DISTINCT LOWER(COALESCE(status, 'active')) AS status
+             FROM user_subscriptions
+             WHERE COALESCE(status, '') <> ''
+             ORDER BY 1`
+        ).catch(() => ({ rows: [{ status: 'active' }, { status: 'topup_only' }] })),
     ]);
-    return { plans: plans.rows, topupPlans: topupPlans.rows, addonPlans: addonRes.rows };
+    const known = ['active', 'topup_only', 'cancelled', 'expired', 'inactive'];
+    const fromDb = statusRes.rows.map((r) => r.status).filter(Boolean);
+    const statuses = [...new Set([...known, ...fromDb])];
+    return { plans: plans.rows, topupPlans: topupPlans.rows, addonPlans: addonRes.rows, statuses };
 }
 
 /**

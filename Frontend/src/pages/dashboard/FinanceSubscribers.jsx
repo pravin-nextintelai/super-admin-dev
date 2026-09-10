@@ -16,6 +16,12 @@ const fieldClass =
 const activeFieldClass = 'border-blue-400 bg-blue-50 text-blue-800 font-medium';
 
 const nameOf = (list, id) => (list || []).find((p) => String(p.id) === String(id))?.name;
+const statusLabel = (s) => {
+  const v = String(s || '').toLowerCase();
+  if (v === 'topup_only') return 'Top-up only';
+  if (!v) return 'Status';
+  return v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+};
 
 function pageNumbers(current, total) {
   if (total <= 1) return [1];
@@ -37,6 +43,7 @@ const FinanceSubscribers = () => {
   const [planId, setPlanId] = useState('');
   const [topupPlanId, setTopupPlanId] = useState('');
   const [addonPlanId, setAddonPlanId] = useState('');
+  const [status, setStatus] = useState('');
   const [month, setMonth] = useState('');
   const [day, setDay] = useState('');
   const [page, setPage] = useState(1);
@@ -45,6 +52,7 @@ const FinanceSubscribers = () => {
   const [plans, setPlans] = useState([]);
   const [topupPlans, setTopupPlans] = useState([]);
   const [addonPlans, setAddonPlans] = useState([]);
+  const [statuses, setStatuses] = useState(['active', 'topup_only']);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [err, setErr] = useState(null);
