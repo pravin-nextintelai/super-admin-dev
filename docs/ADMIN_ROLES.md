@@ -215,6 +215,8 @@ Mounted at `/api/admin/plan-analytics`. Roles: `super-admin`, `user-admin`, `acc
 
 `GET /subscribers` is the paginated Users & Plans list. Query: `page`, `pageSize` (max 50), `planId`, `topupPlanId`, `addonPlanId`, `month` (`YYYY-MM`), `day` (`YYYY-MM-DD`, overrides month), `search` (username/email), optional `status`. Response includes `data.rows`, `data.total`, and `data.filters` (`plans`, `topupPlans`, `addonPlans`).
 
+`GET /subscribers/export` downloads a CSV of **all matching rows** (same filters, not just the current page). No filters = full list. Filters = only those rows.
+
 User billing drill-in: `/api/admin/user-analytics/*` allows `super-admin`, `user-admin`, `account-admin`, `finance-admin`.
 
 Example `data.totals` from `/summary`:

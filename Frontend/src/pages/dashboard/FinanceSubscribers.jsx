@@ -171,7 +171,9 @@ const FinanceSubscribers = () => {
       const href = URL.createObjectURL(blob);
       a.href = href;
       a.download = filename;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       URL.revokeObjectURL(href);
       financeSubscribersLogger.flow('csv:success', {
         summary: { filename, filtered: Boolean(search || planId || topupPlanId || addonPlanId || month || day) },
