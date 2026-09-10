@@ -40,7 +40,7 @@ const ROLE_HOME = {
   'super-admin': '/dashboard',
   'user-admin': '/dashboard/users',
   'account-admin': '/dashboard/subscriptions',
-  'finance-admin': '/dashboard/subscriptions/analytics',
+  'finance-admin': '/dashboard/subscriptions/users',
   'marketing-admin': '/dashboard/demo-bookings',
   'support-admin': '/dashboard/support',
 };

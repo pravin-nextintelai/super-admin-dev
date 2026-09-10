@@ -238,7 +238,7 @@ const loginLogger = createDebugLogger('AuthLogin');
 
 const ROLE_HOME = {
   'marketing-admin': '/dashboard/demo-bookings',
-  'finance-admin': '/dashboard/subscriptions/analytics',
+  'finance-admin': '/dashboard/subscriptions/users',
   'account-admin': '/dashboard/subscriptions',
   'user-admin': '/dashboard/users',
   'support-admin': '/dashboard/support',

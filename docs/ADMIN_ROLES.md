@@ -57,7 +57,7 @@ Seeded into `Auth_DB.super_admins`. Use them at **http://localhost:3001/login**.
 | Role | Name | Email | Password | Lands on |
 |---|---|---|---|---|
 | **Marketing Admin** | Marketing Admin | `marketing.admin@jurinex.dev` | `Marketing@1234` | `/dashboard/demo-bookings` |
-| **Finance Admin** | Finance Admin | `finance.admin@jurinex.dev` | `Finance@1234` | `/dashboard/subscriptions/analytics` |
+| **Finance Admin** | Finance Admin | `finance.admin@jurinex.dev` | `Finance@1234` | `/dashboard/subscriptions/users` |
 
 **How to test**
 
@@ -88,7 +88,7 @@ Portal roles live in `admin_roles`. Create Admin fails with `Invalid role` if th
 | `super-admin` | Super Admin | Full portal, including creating other admins | `/dashboard` |
 | `user-admin` | User Admin | Jurinex users, firms, per-user analytics, content | `/dashboard/users` |
 | `account-admin` | Account Admin | Create / edit / delete subscription plans | `/dashboard/subscriptions` |
-| `finance-admin` | Finance Admin | **Read-only** money: subscriptions, paid users, amounts, income | `/dashboard/subscriptions/analytics` |
+| `finance-admin` | Finance Admin | **Read-only** money: subscriptions, paid users, amounts, income | `/dashboard/subscriptions/users` |
 | `marketing-admin` | Marketing Admin | Demo bookings + AI chatbot documents | `/dashboard/demo-bookings` |
 | `support-admin` | Support Admin | Support workspace / tickets | `/dashboard/support` |
 
@@ -102,7 +102,7 @@ Super Admin can open every page. Other roles:
 
 | Page | Path | Super | User | Account | **Finance** | **Marketing** | Support |
 |---|---|---|---|---|---|---|---|
-| Dashboard | `/dashboard` | ✓ | redirected to users | redirected to subscriptions | redirected to analytics | redirected to demos | redirected to support |
+| Dashboard | `/dashboard` | ✓ | redirected to users | redirected to subscriptions | redirected to users & plans | redirected to demos | redirected to support |
 | User Management | `/dashboard/users` | ✓ | ✓ | | | | |
 | User / firm analytics | `/dashboard/users/:id/analytics` | ✓ | ✓ | ✓ (from Users & Plans) | ✓ (from plan / users drill-in) | | |
 | Admin Management | `/dashboard/admins` | ✓ | | | | | |
@@ -110,8 +110,8 @@ Super Admin can open every page. Other roles:
 | AI Chatbot | `/dashboard/documents` | ✓ | | | | ✓ | |
 | Demo Bookings | `/dashboard/demo-bookings` | ✓ | | | | ✓ **home** | |
 | Subscription catalog | `/dashboard/subscriptions` | ✓ | | ✓ (edit) | ✓ **view only** | | |
-| Plan Analytics | `/dashboard/subscriptions/analytics` | ✓ | | ✓ | ✓ **home** | | |
-| Users & Plans | `/dashboard/subscriptions/users` | ✓ | | ✓ | ✓ | | |
+| Plan Analytics | `/dashboard/subscriptions/analytics` | ✓ | | ✓ | ✓ | | |
+| Users & Plans | `/dashboard/subscriptions/users` | ✓ | | ✓ | ✓ **home** | | |
 | Support | `/dashboard/support` | ✓ | | | | | ✓ |
 | Settings | `/dashboard/settings` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
@@ -151,8 +151,8 @@ Sees **who paid** and **how much**. Does not change plans, users, or demos.
 
 | Sidebar | Behaviour |
 |---|---|
-| **Plan Analytics** | Default home. Totals + per-plan tables + drill-in to buyers |
-| **Users & Plans** | All monthly-plan subscribers with search and plan / month / day filters |
+| **Users & Plans** | Default home. All monthly + top-up + add-on buyers, filters, CSV export |
+| **Plan Analytics** | Totals + per-plan tables + drill-in to buyers |
 | **Subscription Management** | Catalog only (`canMutate === false`) |
 | **Settings** | Profile / logout |
 
@@ -195,7 +195,7 @@ Landing paths (`Frontend/src/App.jsx` `ROLE_HOME` and `LoginPage.jsx`):
 | `super-admin` | `/dashboard` |
 | `user-admin` | `/dashboard/users` |
 | `account-admin` | `/dashboard/subscriptions` |
-| `finance-admin` | `/dashboard/subscriptions/analytics` |
+| `finance-admin` | `/dashboard/subscriptions/users` |
 | `marketing-admin` | `/dashboard/demo-bookings` |
 | `support-admin` | `/dashboard/support` |
 
@@ -209,13 +209,14 @@ Mounted at `/api/admin/plan-analytics`. Roles: `super-admin`, `user-admin`, `acc
 |---|---|
 | `GET` | `/summary` |
 | `GET` | `/subscribers` |
+| `GET` | `/subscribers/export` |
 | `GET` | `/monthly/:planId/subscribers` |
 | `GET` | `/topup/:planId/buyers` |
 | `GET` | `/addon/:planId/buyers` |
 
-`GET /subscribers` is the paginated Users & Plans list. Query: `page`, `pageSize` (max 50), `planId`, `topupPlanId`, `addonPlanId`, `month` (`YYYY-MM`), `day` (`YYYY-MM-DD`, overrides month), `search` (username/email), optional `status`. Response includes `data.rows`, `data.total`, and `data.filters` (`plans`, `topupPlans`, `addonPlans`).
+`GET /subscribers` is the paginated Users & Plans list (monthly subscribers plus top-up / add-on-only buyers). Query: `page`, `pageSize` (max 50), `planId`, `topupPlanId`, `addonPlanId`, `month` (`YYYY-MM`), `day` (`YYYY-MM-DD`, overrides month), `search` (username/email), optional `status` (`active`, `topup_only`, `pack_only`, …). Response includes `data.rows`, `data.total`, and `data.filters` (`plans`, `topupPlans`, `addonPlans`, `statuses`). Rows include pack names, `paid_total`, and `last_paid_at`.
 
-`GET /subscribers/export` downloads a CSV of **all matching rows** (same filters, not just the current page). No filters = full list. Filters = only those rows.
+`GET /subscribers/export` downloads a UTF-8 CSV (BOM + IST dates) of **all matching rows** (same filters, not just the current page). Open in Excel. No filters = full list. Filters = only those rows. Cap 10,000 rows.
 
 User billing drill-in: `/api/admin/user-analytics/*` allows `super-admin`, `user-admin`, `account-admin`, `finance-admin`.
 

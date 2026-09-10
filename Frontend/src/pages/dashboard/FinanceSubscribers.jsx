@@ -19,6 +19,7 @@ const nameOf = (list, id) => (list || []).find((p) => String(p.id) === String(id
 const statusLabel = (s) => {
   const v = String(s || '').toLowerCase();
   if (v === 'topup_only') return 'Top-up only';
+  if (v === 'pack_only') return 'Pack only';
   if (!v) return 'Status';
   return v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
@@ -52,7 +53,7 @@ const FinanceSubscribers = () => {
   const [plans, setPlans] = useState([]);
   const [topupPlans, setTopupPlans] = useState([]);
   const [addonPlans, setAddonPlans] = useState([]);
-  const [statuses, setStatuses] = useState(['active', 'topup_only']);
+  const [statuses, setStatuses] = useState(['active', 'topup_only', 'pack_only']);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [err, setErr] = useState(null);
@@ -102,7 +103,7 @@ const FinanceSubscribers = () => {
       setAddonPlans(Array.isArray(data.filters?.addonPlans) ? data.filters.addonPlans : []);
       setStatuses(Array.isArray(data.filters?.statuses) && data.filters.statuses.length
         ? data.filters.statuses
-        : ['active', 'topup_only']);
+        : ['active', 'topup_only', 'pack_only']);
       financeSubscribersLogger.flow('list:load:success', {
         summary: {
           role: localStorage.getItem('userRole'),
@@ -229,14 +230,14 @@ const FinanceSubscribers = () => {
           </div>
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-slate-800 leading-tight">Users & Plans</h1>
-            <p className="text-xs text-slate-500 truncate">All monthly-plan subscribers. Filters stay off until you pick one.</p>
+            <p className="text-xs text-slate-500 truncate">Monthly, top-up, and add-on buyers. Filters stay off until you pick one.</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={handleDownloadCsv}
             disabled={exporting || loading}
-            title={hasFilters ? 'Download CSV of rows matching the current filters' : 'Download CSV of all subscribers'}
+            title={hasFilters ? 'Download Excel CSV of rows matching the current filters' : 'Download Excel CSV of all buyers'}
             className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors disabled:opacity-50"
           >
             <Download className={`w-3.5 h-3.5 ${exporting ? 'animate-pulse' : ''}`} />
@@ -418,7 +419,7 @@ const FinanceSubscribers = () => {
                         {!r.topup_plan_names && !r.addon_plan_names ? <span className="text-xs text-slate-400">—</span> : null}
                       </div>
                     </td>
-                    <td className="px-3 py-2"><StatusPill status={r.status} /></td>
+                    <td className="px-3 py-2"><StatusPill status={r.status === 'pack_only' ? 'Pack only' : r.status} /></td>
                     <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{fmtDate(r.joined_at || r.created_at || r.start_date)}</td>
                     <td className="px-3 py-2 text-right text-slate-800 font-medium tabular-nums whitespace-nowrap">{fmtINR(r.paid_total)}</td>
                     <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{fmtDate(r.last_paid_at)}</td>
