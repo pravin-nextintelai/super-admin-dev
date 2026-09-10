@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, ChevronLeft, ChevronRight, Download, Eye, Lock, RefreshCw, Search, Users, X,
 } from 'lucide-react';
-import { fmtDate, fmtNum } from './userAnalytics/analyticsFormat';
+import { fmtDate, fmtINR, fmtNum } from './userAnalytics/analyticsFormat';
 import { StatusPill } from './userAnalytics/AnalyticsCharts';
 import { downloadPlanSubscribersCsv, fetchPlanSubscribers } from './userAnalytics/analyticsApi';
 import { createDebugLogger } from '../../utils/debugLogger';
@@ -81,6 +81,7 @@ const FinanceSubscribers = () => {
       planId: planId || undefined,
       topupPlanId: topupPlanId || undefined,
       addonPlanId: addonPlanId || undefined,
+      status: status || undefined,
       month: month || undefined,
       day: day || undefined,
       search: search || undefined,
@@ -99,6 +100,9 @@ const FinanceSubscribers = () => {
       setPlans(Array.isArray(data.filters?.plans) ? data.filters.plans : []);
       setTopupPlans(Array.isArray(data.filters?.topupPlans) ? data.filters.topupPlans : []);
       setAddonPlans(Array.isArray(data.filters?.addonPlans) ? data.filters.addonPlans : []);
+      setStatuses(Array.isArray(data.filters?.statuses) && data.filters.statuses.length
+        ? data.filters.statuses
+        : ['active', 'topup_only']);
       financeSubscribersLogger.flow('list:load:success', {
         summary: {
           role: localStorage.getItem('userRole'),
@@ -108,6 +112,7 @@ const FinanceSubscribers = () => {
           planId: planId || null,
           topupPlanId: topupPlanId || null,
           addonPlanId: addonPlanId || null,
+          status: status || null,
           month: month || null,
           day: day || null,
           search: search || null,
@@ -132,7 +137,7 @@ const FinanceSubscribers = () => {
     } finally {
       if (reqId === reqIdRef.current) setLoading(false);
     }
-  }, [page, planId, topupPlanId, addonPlanId, month, day, search]);
+  }, [page, planId, topupPlanId, addonPlanId, status, month, day, search]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -147,13 +152,14 @@ const FinanceSubscribers = () => {
     setPlanId('');
     setTopupPlanId('');
     setAddonPlanId('');
+    setStatus('');
     setMonth('');
     setDay('');
     setPage(1);
   };
 
   const handleRefresh = () => {
-    const alreadyClear = !searchInput && !search && !planId && !topupPlanId && !addonPlanId && !month && !day;
+    const alreadyClear = !searchInput && !search && !planId && !topupPlanId && !addonPlanId && !status && !month && !day;
     resetFilters();
     if (alreadyClear) load();
   };
@@ -164,13 +170,14 @@ const FinanceSubscribers = () => {
       planId: planId || undefined,
       topupPlanId: topupPlanId || undefined,
       addonPlanId: addonPlanId || undefined,
+      status: status || undefined,
       month: month || undefined,
       day: day || undefined,
       search: search || undefined,
     };
     financeSubscribersLogger.event('csv:start', {
       role: localStorage.getItem('userRole'),
-      filtered: Boolean(search || planId || topupPlanId || addonPlanId || month || day),
+      filtered: Boolean(search || planId || topupPlanId || addonPlanId || status || month || day),
       ...params,
     });
     try {
@@ -184,7 +191,7 @@ const FinanceSubscribers = () => {
       a.remove();
       URL.revokeObjectURL(href);
       financeSubscribersLogger.flow('csv:success', {
-        summary: { filename, filtered: Boolean(search || planId || topupPlanId || addonPlanId || month || day) },
+        summary: { filename, filtered: Boolean(search || planId || topupPlanId || addonPlanId || status || month || day) },
       });
     } catch (e) {
       financeSubscribersLogger.error('csv:failed', e, {
@@ -199,7 +206,7 @@ const FinanceSubscribers = () => {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 || rows.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = rows.length === 0 ? 0 : from + rows.length - 1;
-  const hasFilters = Boolean(search || planId || topupPlanId || addonPlanId || month || day);
+  const hasFilters = Boolean(search || planId || topupPlanId || addonPlanId || status || month || day);
   const pages = useMemo(() => pageNumbers(page, pageCount), [page, pageCount]);
   const activeChips = useMemo(() => {
     const chips = [];
@@ -207,10 +214,11 @@ const FinanceSubscribers = () => {
     if (planId) chips.push({ key: 'plan', label: nameOf(plans, planId) || 'Monthly', onClear: () => { setPlanId(''); setPage(1); } });
     if (topupPlanId) chips.push({ key: 'topup', label: nameOf(topupPlans, topupPlanId) || 'Top-up', onClear: () => { setTopupPlanId(''); setPage(1); } });
     if (addonPlanId) chips.push({ key: 'addon', label: nameOf(addonPlans, addonPlanId) || 'Add-on', onClear: () => { setAddonPlanId(''); setPage(1); } });
+    if (status) chips.push({ key: 'status', label: statusLabel(status), onClear: () => { setStatus(''); setPage(1); } });
     if (month) chips.push({ key: 'month', label: month, onClear: () => { setMonth(''); setPage(1); } });
     if (day) chips.push({ key: 'day', label: day, onClear: () => { setDay(''); setPage(1); } });
     return chips;
-  }, [search, planId, topupPlanId, addonPlanId, month, day, plans, topupPlans, addonPlans]);
+  }, [search, planId, topupPlanId, addonPlanId, status, month, day, plans, topupPlans, addonPlans]);
 
   return (
     <div className="h-[calc(100vh-5rem)] flex flex-col gap-2.5 min-h-0">
@@ -288,6 +296,17 @@ const FinanceSubscribers = () => {
               <option key={p.id} value={p.id} className="text-slate-700">{p.name}</option>
             ))}
           </select>
+          <select
+            value={status}
+            onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+            className={`${fieldClass} w-[8.5rem] ${status ? activeFieldClass : 'text-slate-400'}`}
+            aria-label="Filter by status"
+          >
+            <option value="">Status</option>
+            {statuses.map((s) => (
+              <option key={s} value={s} className="text-slate-700">{statusLabel(s)}</option>
+            ))}
+          </select>
           <div className="h-5 w-px bg-slate-200 shrink-0 hidden sm:block" />
           <input
             type="month"
@@ -353,7 +372,7 @@ const FinanceSubscribers = () => {
           ) : rows.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-400">
               <Users className="w-8 h-8 opacity-30" />
-              <p className="text-sm">{hasFilters ? 'No subscribers match all selected filters.' : 'No monthly-plan subscribers yet.'}</p>
+              <p className="text-sm">{hasFilters ? 'No subscribers match all selected filters.' : 'No plan buyers yet.'}</p>
             </div>
           ) : (
             <table className="w-full text-sm">
@@ -361,8 +380,11 @@ const FinanceSubscribers = () => {
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 uppercase tracking-wide">
                   <th className="px-3 py-2 text-left font-semibold">User</th>
                   <th className="px-3 py-2 text-left font-semibold">Plan</th>
+                  <th className="px-3 py-2 text-left font-semibold">Packs</th>
                   <th className="px-3 py-2 text-left font-semibold">Status</th>
                   <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">Joined</th>
+                  <th className="px-3 py-2 text-right font-semibold whitespace-nowrap">Paid</th>
+                  <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">Last paid</th>
                   <th className="px-3 py-2 text-right font-semibold whitespace-nowrap">Plan balance</th>
                   <th className="px-3 py-2 text-right font-semibold whitespace-nowrap">Top-up</th>
                   <th className="px-3 py-2 text-right font-semibold">Actions</th>
@@ -385,8 +407,21 @@ const FinanceSubscribers = () => {
                         {r.plan_name || '—'}
                       </span>
                     </td>
+                    <td className="px-3 py-2 max-w-[14rem]">
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        {r.topup_plan_names ? (
+                          <span className="text-xs text-slate-700 truncate" title={r.topup_plan_names}>{r.topup_plan_names}</span>
+                        ) : null}
+                        {r.addon_plan_names ? (
+                          <span className="text-xs text-slate-500 truncate" title={r.addon_plan_names}>{r.addon_plan_names}</span>
+                        ) : null}
+                        {!r.topup_plan_names && !r.addon_plan_names ? <span className="text-xs text-slate-400">—</span> : null}
+                      </div>
+                    </td>
                     <td className="px-3 py-2"><StatusPill status={r.status} /></td>
                     <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{fmtDate(r.joined_at || r.created_at || r.start_date)}</td>
+                    <td className="px-3 py-2 text-right text-slate-800 font-medium tabular-nums whitespace-nowrap">{fmtINR(r.paid_total)}</td>
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{fmtDate(r.last_paid_at)}</td>
                     <td className="px-3 py-2 text-right text-slate-700 tabular-nums whitespace-nowrap">{fmtNum(r.current_token_balance)}</td>
                     <td className="px-3 py-2 text-right text-slate-700 tabular-nums whitespace-nowrap">{fmtNum(r.topup_token_balance)}</td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">

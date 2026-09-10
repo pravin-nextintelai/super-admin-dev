@@ -404,6 +404,8 @@ async function resolveSearchIds(authPool, search, limit = 500) {
     return { searchIds, empty: searchIds.length === 0 };
 }
 
+const PAID_STATUSES = `'captured','paid','success','succeeded','completed'`;
+
 const SUBSCRIBER_SELECT = `SELECT us.user_id,
                     us.status,
                     us.start_date,
@@ -416,7 +418,37 @@ const SUBSCRIBER_SELECT = `SELECT us.user_id,
                     mp.name AS plan_name,
                     mp.category AS plan_category,
                     mp.price AS plan_price,
-                    mp.currency AS plan_currency
+                    mp.currency AS plan_currency,
+                    (SELECT string_agg(DISTINCT tp.name, ', ' ORDER BY tp.name)
+                     FROM user_token_topup_purchases up
+                     JOIN topup_plans tp ON tp.id = up.topup_plan_id
+                     WHERE up.user_id = us.user_id) AS topup_plan_names,
+                    (SELECT string_agg(DISTINCT ap.name, ', ' ORDER BY ap.name)
+                     FROM user_storage_addon_purchases ua
+                     JOIN addon_plans ap ON ap.id = ua.addon_plan_id
+                     WHERE ua.user_id = us.user_id) AS addon_plan_names,
+                    (
+                      COALESCE((
+                        SELECT SUM(p.amount) FILTER (WHERE LOWER(COALESCE(p.status, '')) IN (${PAID_STATUSES}))
+                        FROM payments p WHERE p.user_id = us.user_id
+                      ), 0)
+                      + COALESCE((
+                        SELECT SUM(up.amount) FILTER (WHERE LOWER(COALESCE(up.status, '')) IN (${PAID_STATUSES}))
+                        FROM user_token_topup_purchases up WHERE up.user_id = us.user_id
+                      ), 0)
+                      + COALESCE((
+                        SELECT SUM(ua.amount) FILTER (WHERE LOWER(COALESCE(ua.status, '')) IN (${PAID_STATUSES}))
+                        FROM user_storage_addon_purchases ua WHERE ua.user_id = us.user_id
+                      ), 0)
+                    )::numeric AS paid_total,
+                    GREATEST(
+                      (SELECT MAX(p.created_at) FROM payments p
+                       WHERE p.user_id = us.user_id AND LOWER(COALESCE(p.status, '')) IN (${PAID_STATUSES})),
+                      (SELECT MAX(up.created_at) FROM user_token_topup_purchases up
+                       WHERE up.user_id = us.user_id AND LOWER(COALESCE(up.status, '')) IN (${PAID_STATUSES})),
+                      (SELECT MAX(ua.created_at) FROM user_storage_addon_purchases ua
+                       WHERE ua.user_id = us.user_id AND LOWER(COALESCE(ua.status, '')) IN (${PAID_STATUSES}))
+                    ) AS last_paid_at
              FROM user_subscriptions us
              JOIN monthly_plans mp ON mp.id = us.monthly_plan_id`;
 
@@ -436,7 +468,8 @@ function toIsoDate(value) {
 function subscribersToCsv(rows) {
     const header = [
         'User ID', 'Username', 'Email', 'Blocked', 'Plan', 'Plan category',
-        'Status', 'Joined at', 'Plan balance', 'Top-up balance',
+        'Status', 'Joined at', 'Top-up packs', 'Add-ons', 'Paid total', 'Last paid at',
+        'Plan balance', 'Top-up balance',
     ];
     const lines = [header.map(csvCell).join(',')];
     rows.forEach((r) => {
@@ -449,6 +482,10 @@ function subscribersToCsv(rows) {
             r.plan_category,
             r.status,
             toIsoDate(r.joined_at || r.created_at || r.start_date),
+            r.topup_plan_names,
+            r.addon_plan_names,
+            r.paid_total,
+            toIsoDate(r.last_paid_at),
             r.current_token_balance,
             r.topup_token_balance,
         ].map(csvCell).join(','));
@@ -457,10 +494,9 @@ function subscribersToCsv(rows) {
 }
 
 async function loadSubscriberFacets(paymentPool) {
-    const [plans, topupPlans, addonRes] = await Promise.all([
+    const [plans, topupPlans, addonRes, statusRes] = await Promise.all([
         paymentPool.query(`SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`),
         paymentPool.query(`SELECT id, name FROM topup_plans ORDER BY sort_order ASC, id ASC`),
-    const [addonRes, statusRes] = await Promise.all([
         paymentPool.query(`SELECT id, name FROM addon_plans ORDER BY sort_order ASC, id ASC`).catch(() => ({ rows: [] })),
         paymentPool.query(
             `SELECT DISTINCT LOWER(COALESCE(status, 'active')) AS status
