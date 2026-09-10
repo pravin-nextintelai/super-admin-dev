@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, ChevronLeft, ChevronRight, Eye, Lock, RefreshCw, Search, Users, X,
+  AlertTriangle, ChevronLeft, ChevronRight, Download, Eye, Lock, RefreshCw, Search, Users, X,
 } from 'lucide-react';
 import { fmtDate, fmtNum } from './userAnalytics/analyticsFormat';
 import { StatusPill } from './userAnalytics/AnalyticsCharts';
-import { fetchPlanSubscribers } from './userAnalytics/analyticsApi';
+import { downloadPlanSubscribersCsv, fetchPlanSubscribers } from './userAnalytics/analyticsApi';
 import { createDebugLogger } from '../../utils/debugLogger';
 
 const financeSubscribersLogger = createDebugLogger('FinanceSubscribers');
@@ -46,6 +46,7 @@ const FinanceSubscribers = () => {
   const [topupPlans, setTopupPlans] = useState([]);
   const [addonPlans, setAddonPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [err, setErr] = useState(null);
   const reqIdRef = useRef(0);
 
@@ -149,6 +150,42 @@ const FinanceSubscribers = () => {
     if (alreadyClear) load();
   };
 
+  const handleDownloadCsv = async () => {
+    setExporting(true);
+    const params = {
+      planId: planId || undefined,
+      topupPlanId: topupPlanId || undefined,
+      addonPlanId: addonPlanId || undefined,
+      month: month || undefined,
+      day: day || undefined,
+      search: search || undefined,
+    };
+    financeSubscribersLogger.event('csv:start', {
+      role: localStorage.getItem('userRole'),
+      filtered: Boolean(search || planId || topupPlanId || addonPlanId || month || day),
+      ...params,
+    });
+    try {
+      const { blob, filename } = await downloadPlanSubscribersCsv(params);
+      const a = document.createElement('a');
+      const href = URL.createObjectURL(blob);
+      a.href = href;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(href);
+      financeSubscribersLogger.flow('csv:success', {
+        summary: { filename, filtered: Boolean(search || planId || topupPlanId || addonPlanId || month || day) },
+      });
+    } catch (e) {
+      financeSubscribersLogger.error('csv:failed', e, {
+        summary: { role: localStorage.getItem('userRole'), ...params },
+      });
+      window.alert(e.message || 'Failed to download CSV');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 || rows.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = rows.length === 0 ? 0 : from + rows.length - 1;
@@ -177,12 +214,23 @@ const FinanceSubscribers = () => {
             <p className="text-xs text-slate-500 truncate">All monthly-plan subscribers. Filters stay off until you pick one.</p>
           </div>
         </div>
-        <button
-          onClick={handleRefresh}
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors shrink-0"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleDownloadCsv}
+            disabled={exporting || loading}
+            title={hasFilters ? 'Download CSV of rows matching the current filters' : 'Download CSV of all subscribers'}
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors disabled:opacity-50"
+          >
+            <Download className={`w-3.5 h-3.5 ${exporting ? 'animate-pulse' : ''}`} />
+            {exporting ? 'Preparing…' : 'Download CSV'}
+          </button>
+          <button
+            onClick={handleRefresh}
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">

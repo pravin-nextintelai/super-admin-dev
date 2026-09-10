@@ -49,3 +49,31 @@ export const fetchPlanSubscribers = (params = {}) => {
   const qs = q.toString();
   return req(`${PBASE}/subscribers${qs ? `?${qs}` : ''}`);
 };
+
+export const downloadPlanSubscribersCsv = async (params = {}) => {
+  const q = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value == null || value === '') return;
+    q.set(key, String(value));
+  });
+  const qs = q.toString();
+  const url = `${PBASE}/subscribers/export${qs ? `?${qs}` : ''}`;
+  const startedAt = Date.now();
+  analyticsApiLogger.event('csv:start', { url });
+  const res = await fetch(url, { headers: getAuthHeaders() });
+  if (!res.ok) {
+    let body = {};
+    try { body = await res.json(); } catch { /* non-JSON */ }
+    analyticsApiLogger.flow('csv:failed', {
+      level: 'error',
+      summary: { url, status: res.status },
+      output: body,
+      metrics: { durationMs: Date.now() - startedAt },
+    });
+    throw new Error(body.message || body.error || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const match = /filename="?([^"]+)"?/i.exec(res.headers.get('content-disposition') || '');
+  analyticsApiLogger.event('csv:success', { url, status: res.status, durationMs: Date.now() - startedAt });
+  return { blob, filename: match?.[1] || `users-plans-${new Date().toISOString().slice(0, 10)}.csv` };
+};

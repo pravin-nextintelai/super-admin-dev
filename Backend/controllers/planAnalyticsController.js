@@ -333,6 +333,126 @@ const clampPageSize = (v, def = 25) => {
 };
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const EXPORT_LIMIT = 10000;
+
+function parseSubscriberQuery(query) {
+    const page = clampPage(query.page);
+    const pageSize = clampPageSize(query.pageSize);
+    const planIdRaw = parseInt(query.planId, 10);
+    const topupPlanIdRaw = parseInt(query.topupPlanId, 10);
+    const addonPlanIdRaw = parseInt(query.addonPlanId, 10);
+    const day = DAY_RE.test(String(query.day || '').trim()) ? String(query.day).trim() : null;
+    return {
+        page,
+        pageSize,
+        planId: Number.isFinite(planIdRaw) ? planIdRaw : null,
+        topupPlanId: Number.isFinite(topupPlanIdRaw) ? topupPlanIdRaw : null,
+        addonPlanId: Number.isFinite(addonPlanIdRaw) ? addonPlanIdRaw : null,
+        day,
+        month: !day && MONTH_RE.test(String(query.month || '').trim()) ? String(query.month).trim() : null,
+        search: String(query.search || '').trim().slice(0, 120),
+        status: String(query.status || '').trim().toLowerCase() || null,
+    };
+}
+
+function buildSubscriberWhere(filters) {
+    const where = [];
+    const params = [];
+    const add = (clause, value) => {
+        params.push(value);
+        where.push(clause.replace('$?', `$${params.length}`));
+    };
+    where.push('us.monthly_plan_id IS NOT NULL');
+    if (filters.planId != null) add('us.monthly_plan_id = $?', filters.planId);
+    if (filters.topupPlanId != null) {
+        add(
+            `EXISTS (
+                SELECT 1 FROM user_token_topup_purchases up
+                WHERE up.user_id = us.user_id AND up.topup_plan_id = $?
+            )`,
+            filters.topupPlanId
+        );
+    }
+    if (filters.addonPlanId != null) {
+        add(
+            `EXISTS (
+                SELECT 1 FROM user_storage_addon_purchases ap
+                WHERE ap.user_id = us.user_id AND ap.addon_plan_id = $?
+            )`,
+            filters.addonPlanId
+        );
+    }
+    if (filters.status) add('LOWER(COALESCE(us.status, \'\')) = $?', filters.status);
+    if (filters.searchIds) add('us.user_id = ANY($?::int[])', filters.searchIds);
+    const joinedIst = `(COALESCE(us.created_at, us.start_date) AT TIME ZONE 'Asia/Kolkata')`;
+    if (filters.day) add(`${joinedIst}::date = $?::date`, filters.day);
+    else if (filters.month) add(`to_char(${joinedIst}, 'YYYY-MM') = $?`, filters.month);
+    return { whereSql: `WHERE ${where.join(' AND ')}`, params };
+}
+
+async function resolveSearchIds(authPool, search, limit = 500) {
+    if (!search) return { searchIds: null, empty: false };
+    const { rows } = await authPool.query(
+        `SELECT id FROM users
+         WHERE username ILIKE $1 OR email ILIKE $1
+         LIMIT $2`,
+        [`%${search}%`, limit]
+    );
+    const searchIds = rows.map((r) => r.id);
+    return { searchIds, empty: searchIds.length === 0 };
+}
+
+const SUBSCRIBER_SELECT = `SELECT us.user_id,
+                    us.status,
+                    us.start_date,
+                    us.end_date,
+                    us.created_at,
+                    COALESCE(us.created_at, us.start_date) AS joined_at,
+                    COALESCE(us.current_token_balance, 0)::bigint AS current_token_balance,
+                    COALESCE(us.topup_token_balance, 0)::bigint AS topup_token_balance,
+                    mp.id AS plan_id,
+                    mp.name AS plan_name,
+                    mp.category AS plan_category,
+                    mp.price AS plan_price,
+                    mp.currency AS plan_currency
+             FROM user_subscriptions us
+             JOIN monthly_plans mp ON mp.id = us.monthly_plan_id`;
+
+function csvCell(value) {
+    if (value == null || value === '') return '';
+    const s = String(value);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+}
+
+function toIsoDate(value) {
+    if (!value) return '';
+    const dt = new Date(value);
+    return Number.isNaN(dt.getTime()) ? '' : dt.toISOString();
+}
+
+function subscribersToCsv(rows) {
+    const header = [
+        'User ID', 'Username', 'Email', 'Blocked', 'Plan', 'Plan category',
+        'Status', 'Joined at', 'Plan balance', 'Top-up balance',
+    ];
+    const lines = [header.map(csvCell).join(',')];
+    rows.forEach((r) => {
+        lines.push([
+            r.user_id,
+            r.username,
+            r.email,
+            r.is_blocked ? 'yes' : 'no',
+            r.plan_name,
+            r.plan_category,
+            r.status,
+            toIsoDate(r.joined_at || r.created_at || r.start_date),
+            r.current_token_balance,
+            r.topup_token_balance,
+        ].map(csvCell).join(','));
+    });
+    return `\uFEFF${lines.join('\r\n')}\r\n`;
+}
 
 async function loadSubscriberFacets(paymentPool) {
     const [plans, topupPlans, addonRes] = await Promise.all([
@@ -350,158 +470,111 @@ async function loadSubscriberFacets(paymentPool) {
  * topupPlanId / addonPlanId keep monthly subscribers who bought that pack.
  */
 exports.getSubscribers = async (req, res, pools) => {
-    const page = clampPage(req.query.page);
-    const pageSize = clampPageSize(req.query.pageSize);
+    const filters = parseSubscriberQuery(req.query);
+    const { page, pageSize, planId, topupPlanId, addonPlanId, day, month, search, status } = filters;
     const offset = (page - 1) * pageSize;
-    const planIdRaw = parseInt(req.query.planId, 10);
-    const planId = Number.isFinite(planIdRaw) ? planIdRaw : null;
-    const topupPlanIdRaw = parseInt(req.query.topupPlanId, 10);
-    const topupPlanId = Number.isFinite(topupPlanIdRaw) ? topupPlanIdRaw : null;
-    const addonPlanIdRaw = parseInt(req.query.addonPlanId, 10);
-    const addonPlanId = Number.isFinite(addonPlanIdRaw) ? addonPlanIdRaw : null;
-    const day = DAY_RE.test(String(req.query.day || '').trim()) ? String(req.query.day).trim() : null;
-    const month = !day && MONTH_RE.test(String(req.query.month || '').trim()) ? String(req.query.month).trim() : null;
-    const search = String(req.query.search || '').trim().slice(0, 120);
-    const status = String(req.query.status || '').trim().toLowerCase() || null;
 
     try {
-        let searchIds = null;
-        if (search) {
-            const { rows: matched } = await pools.authPool.query(
-                `SELECT id FROM users
-                 WHERE username ILIKE $1 OR email ILIKE $1
-                 LIMIT 500`,
-                [`%${search}%`]
-            );
-            searchIds = matched.map((r) => r.id);
-            if (!searchIds.length) {
-                const facets = await loadSubscriberFacets(pools.paymentPool);
-                logPortalFlow(req, 'Plan analytics subscribers list loaded', {
-                    layer: 'PLAN_ANALYTICS',
-                    summary: { page, pageSize, planId, topupPlanId, addonPlanId, month, day, search, status, total: 0, rowCount: 0 },
-                });
-                return res.status(200).json({
-                    success: true,
-                    data: {
-                        rows: [],
-                        total: 0,
-                        page,
-                        pageSize,
-                        filters: facets,
-                    },
-                });
-            }
+        const found = await resolveSearchIds(pools.authPool, search);
+        if (found.empty) {
+            const facets = await loadSubscriberFacets(pools.paymentPool);
+            logPortalFlow(req, 'Plan analytics subscribers list loaded', {
+                layer: 'PLAN_ANALYTICS',
+                summary: { page, pageSize, planId, topupPlanId, addonPlanId, month, day, search, status, total: 0, rowCount: 0 },
+            });
+            return res.status(200).json({
+                success: true,
+                data: { rows: [], total: 0, page, pageSize, filters: facets },
+            });
         }
 
-        const where = [];
-        const params = [];
-        const add = (clause, value) => {
-            params.push(value);
-            where.push(clause.replace('$?', `$${params.length}`));
-        };
-
-        where.push('us.monthly_plan_id IS NOT NULL');
-        if (planId != null) add('us.monthly_plan_id = $?', planId);
-        if (topupPlanId != null) {
-            add(
-                `EXISTS (
-                    SELECT 1 FROM user_token_topup_purchases up
-                    WHERE up.user_id = us.user_id AND up.topup_plan_id = $?
-                )`,
-                topupPlanId
-            );
-        }
-        if (addonPlanId != null) {
-            add(
-                `EXISTS (
-                    SELECT 1 FROM user_storage_addon_purchases ap
-                    WHERE ap.user_id = us.user_id AND ap.addon_plan_id = $?
-                )`,
-                addonPlanId
-            );
-        }
-        if (status) add('LOWER(COALESCE(us.status, \'\')) = $?', status);
-        if (searchIds) add('us.user_id = ANY($?::int[])', searchIds);
-        const joinedIst = `(COALESCE(us.created_at, us.start_date) AT TIME ZONE 'Asia/Kolkata')`;
-        if (day) add(`${joinedIst}::date = $?::date`, day);
-        else if (month) add(`to_char(${joinedIst}, 'YYYY-MM') = $?`, month);
-
-        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-
+        const { whereSql, params } = buildSubscriberWhere({ ...filters, searchIds: found.searchIds });
         const countRes = await pools.paymentPool.query(
-            `SELECT COUNT(*)::int AS total
-             FROM user_subscriptions us
-             ${whereSql}`,
+            `SELECT COUNT(*)::int AS total FROM user_subscriptions us ${whereSql}`,
             params
         );
         const total = countRes.rows[0]?.total || 0;
-
         const listParams = [...params, pageSize, offset];
-        const limitIdx = params.length + 1;
-        const offsetIdx = params.length + 2;
         const { rows } = await pools.paymentPool.query(
-            `SELECT us.user_id,
-                    us.status,
-                    us.start_date,
-                    us.end_date,
-                    us.created_at,
-                    COALESCE(us.created_at, us.start_date) AS joined_at,
-                    COALESCE(us.current_token_balance, 0)::bigint AS current_token_balance,
-                    COALESCE(us.topup_token_balance, 0)::bigint AS topup_token_balance,
-                    mp.id AS plan_id,
-                    mp.name AS plan_name,
-                    mp.category AS plan_category,
-                    mp.price AS plan_price,
-                    mp.currency AS plan_currency
-             FROM user_subscriptions us
-             JOIN monthly_plans mp ON mp.id = us.monthly_plan_id
+            `${SUBSCRIBER_SELECT}
              ${whereSql}
              ORDER BY COALESCE(us.created_at, us.start_date) DESC NULLS LAST, us.user_id DESC
-             LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+             LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
             listParams
         );
 
         const enriched = await attachUsers(rows, pools.authPool);
         const facets = await loadSubscriberFacets(pools.paymentPool);
-
         logPortalFlow(req, 'Plan analytics subscribers list loaded', {
             layer: 'PLAN_ANALYTICS',
             summary: {
-                page,
-                pageSize,
-                planId,
-                topupPlanId,
-                addonPlanId,
-                month,
-                day,
-                search: search || null,
-                status,
-                total,
-                rowCount: enriched.length,
+                page, pageSize, planId, topupPlanId, addonPlanId, month, day,
+                search: search || null, status, total, rowCount: enriched.length,
             },
             table: enriched.slice(0, 8).map((r) => ({
-                user_id: r.user_id,
-                email: r.email,
-                plan_name: r.plan_name,
-                status: r.status,
+                user_id: r.user_id, email: r.email, plan_name: r.plan_name, status: r.status,
             })),
         });
-
         return res.status(200).json({
             success: true,
-            data: {
-                rows: enriched,
-                total,
-                page,
-                pageSize,
-                filters: facets,
-            },
+            data: { rows: enriched, total, page, pageSize, filters: facets },
         });
     } catch (e) {
         logger.errorWithContext('Plan analytics subscribers list failed', e, {
             requestId: req.requestId,
             layer: 'PLAN_ANALYTICS',
             summary: { page, pageSize, planId, topupPlanId, addonPlanId, month, day, search: search || null, status },
+        });
+        return res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+/** GET /subscribers/export — CSV of all matching rows (same filters as the list, no page cap besides EXPORT_LIMIT). */
+exports.exportSubscribers = async (req, res, pools) => {
+    const filters = parseSubscriberQuery(req.query);
+    const { planId, topupPlanId, addonPlanId, day, month, search, status } = filters;
+    const filtered = Boolean(search || planId || topupPlanId || addonPlanId || month || day || status);
+
+    try {
+        const found = await resolveSearchIds(pools.authPool, search, 5000);
+        if (found.empty) {
+            const csv = subscribersToCsv([]);
+            logPortalFlow(req, 'Plan analytics subscribers CSV exported', {
+                layer: 'PLAN_ANALYTICS',
+                summary: { planId, topupPlanId, addonPlanId, month, day, search, status, filtered, rowCount: 0 },
+            });
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="users-plans-${filtered ? 'filtered-' : ''}${new Date().toISOString().slice(0, 10)}.csv"`);
+            return res.status(200).send(csv);
+        }
+
+        const { whereSql, params } = buildSubscriberWhere({ ...filters, searchIds: found.searchIds });
+        const { rows } = await pools.paymentPool.query(
+            `${SUBSCRIBER_SELECT}
+             ${whereSql}
+             ORDER BY COALESCE(us.created_at, us.start_date) DESC NULLS LAST, us.user_id DESC
+             LIMIT ${EXPORT_LIMIT}`,
+            params
+        );
+        const enriched = await attachUsers(rows, pools.authPool);
+        const csv = subscribersToCsv(enriched);
+        const stamp = new Date().toISOString().slice(0, 10);
+        const filename = `users-plans-${filtered ? 'filtered-' : ''}${stamp}.csv`;
+        logPortalFlow(req, 'Plan analytics subscribers CSV exported', {
+            layer: 'PLAN_ANALYTICS',
+            summary: {
+                planId, topupPlanId, addonPlanId, month, day,
+                search: search || null, status, filtered, rowCount: enriched.length,
+            },
+        });
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.status(200).send(csv);
+    } catch (e) {
+        logger.errorWithContext('Plan analytics subscribers CSV export failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { planId, topupPlanId, addonPlanId, month, day, search: search || null, status, filtered },
         });
         return res.status(500).json({ success: false, message: e.message });
     }
