@@ -457,7 +457,11 @@ exports.getUserStorage = async (req, res, pools) => {
                 addon_limit_bytes: addonBytes,
                 addon_limit_gb: +(addonBytes / GB).toFixed(2),
                 addon_purchases: addonPurchases,
-                used_percent: limitBytes ? +pct(totalBytes, limitBytes).toFixed(1) : null,
+                used_percent: limitBytes
+                    ? (totalBytes > 0 && pct(totalBytes, limitBytes) < 0.01
+                        ? 0.01
+                        : +pct(totalBytes, limitBytes).toFixed(2))
+                    : null,
                 over_limit: limitBytes ? totalBytes > limitBytes : false,
                 breakdown,
             },
