@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import SitePromoBanner from '../components/SitePromoBanner';
 import {
   Scale,
   Users,
@@ -16,8 +17,10 @@ import {
 const LandingPage = () => {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 antialiased selection:bg-blue-100 selection:text-blue-900">
+      <div className="sticky top-0 z-50">
+      <SitePromoBanner />
       {/* Top bar */}
-      <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
+      <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 shadow-md ring-1 ring-white/10">
@@ -47,6 +50,7 @@ const LandingPage = () => {
           </Link>
         </div>
       </header>
+      </div>
 
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-slate-200/80 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950">

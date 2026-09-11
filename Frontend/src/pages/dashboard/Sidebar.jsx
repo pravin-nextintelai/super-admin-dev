@@ -25,6 +25,9 @@ import {
   Mic,
   KeyRound,
   BarChart3,
+  Inbox,
+  Mail,
+  Megaphone,
 } from 'lucide-react';
 import { createDebugLogger } from '../../utils/debugLogger';
 
@@ -132,6 +135,24 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
       name: 'Demo Bookings',
       path: '/dashboard/demo-bookings',
       icon: CalendarCheck,
+      roles: ['super-admin', 'marketing-admin']
+    },
+    {
+      name: 'Contact Enquiries',
+      path: '/dashboard/contact-enquiries',
+      icon: Inbox,
+      roles: ['super-admin', 'marketing-admin']
+    },
+    {
+      name: 'Newsletter Subscribers',
+      path: '/dashboard/newsletter-subscribers',
+      icon: Mail,
+      roles: ['super-admin', 'marketing-admin']
+    },
+    {
+      name: 'Offers & Events',
+      path: '/dashboard/offers-events',
+      icon: Megaphone,
       roles: ['super-admin', 'marketing-admin']
     },
     {

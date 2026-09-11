@@ -232,6 +232,7 @@ import axios from 'axios';
 import { Eye, EyeOff, Lock, Mail, Shield, User, AlertCircle, CheckCircle } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 import { createDebugLogger } from '../../utils/debugLogger';
+import SitePromoBanner from '../SitePromoBanner';
 
 const LOGIN_URL = `${API_BASE_URL}/auth/login`;
 const loginLogger = createDebugLogger('AuthLogin');
@@ -333,7 +334,9 @@ const LoginPage = ({ setAuthStatus }) => {
   const togglePasswordVisibility = () => setShowPassword(!showPassword);
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center p-4 font-inter">
+    <div className="min-h-screen bg-white flex flex-col font-inter">
+      <SitePromoBanner className="sticky top-0 z-50" />
+      <div className="flex-1 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Header Section */}
         <div className="text-center mb-8">
@@ -499,6 +502,7 @@ const LoginPage = ({ setAuthStatus }) => {
             © 2024 Admin Portal. All rights reserved.
           </p>
         </div>
+      </div>
       </div>
     </div>
   );

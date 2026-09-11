@@ -1,7 +1,7 @@
 # Super Admin Portal — Admin Roles Guide
 
-> **Last updated:** 7 September 2026  
-> **Status:** Current with the Marketing Admin + Finance Admin rollout (roles, APIs, UI, test logins, and end-to-end logs).
+> **Last updated:** 11 September 2026  
+> **Status:** Current with the Marketing Admin + Finance Admin rollout (roles, APIs, UI, test logins, and end-to-end logs) and the Marketing **Contact Enquiries** backend (website contact form → IST timeline).
 
 This is the source of truth for **portal** administrator roles in `super-admin-dev`. It is not the Jurinex end-user app.
 
@@ -89,7 +89,7 @@ Portal roles live in `admin_roles`. Create Admin fails with `Invalid role` if th
 | `user-admin` | User Admin | Jurinex users, firms, per-user analytics, content | `/dashboard/users` |
 | `account-admin` | Account Admin | Create / edit / delete subscription plans | `/dashboard/subscriptions` |
 | `finance-admin` | Finance Admin | **Read-only** money: subscriptions, paid users, amounts, income | `/dashboard/subscriptions/analytics` |
-| `marketing-admin` | Marketing Admin | Demo bookings + AI chatbot documents | `/dashboard/demo-bookings` |
+| `marketing-admin` | Marketing Admin | Demo bookings, website contact enquiries, newsletter subscribers + AI chatbot documents | `/dashboard/demo-bookings` |
 | `support-admin` | Support Admin | Support workspace / tickets | `/dashboard/support` |
 
 Legacy slug `admin` still passes `RequireRole` like super-admin.
@@ -109,6 +109,9 @@ Super Admin can open every page. Other roles:
 | Prompt / LLM / Templates / Roles / Voice / Judgements / Citations | various | ✓ | | | | | |
 | AI Chatbot | `/dashboard/documents` | ✓ | | | | ✓ | |
 | Demo Bookings | `/dashboard/demo-bookings` | ✓ | | | | ✓ **home** | |
+| Contact Enquiries | `/dashboard/contact-enquiries` | ✓ | | | | ✓ | |
+| Newsletter Subscribers | `/dashboard/newsletter-subscribers` | ✓ | | | | ✓ | |
+| Offers & Events | `/dashboard/offers-events` | ✓ | | | | ✓ | |
 | Subscription catalog | `/dashboard/subscriptions` | ✓ | | ✓ (edit) | ✓ **view only** | | |
 | Plan Analytics | `/dashboard/subscriptions/analytics` | ✓ | | ✓ | ✓ **home** | | |
 | Support | `/dashboard/support` | ✓ | | | | | ✓ |
@@ -125,10 +128,13 @@ Handles product demos and chatbot knowledge documents. No users, money, or plan 
 | Sidebar | Behaviour |
 |---|---|
 | **Demo Bookings** | Default home. Stats, booking list, status, invite email, delete |
+| **Contact Enquiries** | "Contact Jurinex" website form submissions. KPI cards (today / month in IST, awaiting contact, avg first response), filterable list with IST submission time, detail drawer with contact tracking, "Log a contact" form (call / email / WhatsApp / SMS / meeting with IST time), status / priority / assignee, internal notes, activity timeline, server CSV export. Delete is hidden for marketing (super-admin only). |
+| **Newsletter Subscribers** | Website newsletter sign-ups from `newsletter_subscribers`. List shows **email, IP address, browser, OS, device, and subscribed time (IST)**. Search, device / date filters, detail drawer (full user agent + page URL), CSV export. |
+| **Offers & Events** | Create header-bar **offers** (badge, copy, CTA, IST deadline) and **events** (time slots + seat capacity / booked seats). Active items are fetched by the user website above the header via `GET /api/public/promos/header`. |
 | **AI Chatbot** | Upload / list / delete chatbot documents, config |
 | **Settings** | Profile / logout |
 
-Demo and chatbot routes use `adminAuth.middleware.js`, which allows `marketing-admin`.
+Demo, contact-enquiry and chatbot routes use `adminAuth.middleware.js`, which allows `marketing-admin`.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -139,6 +145,36 @@ Demo and chatbot routes use `adminAuth.middleware.js`, which allows `marketing-a
 | `DELETE` | `/api/admin/demo/bookings/:id` | Delete booking |
 | `GET` / `POST` / `DELETE` | `/api/admin/documents…` | Chatbot document pipeline |
 | `GET` / `PUT` | `/api/admin/chatbot-config` | Chatbot model / voice |
+| `GET` | `/api/admin/contact-enquiries/stats` | KPI totals (today / 7d / month in IST), response time, by-status, by-topic, 14-day trend |
+| `GET` | `/api/admin/contact-enquiries/meta` | Dropdown values + assignable admins |
+| `GET` | `/api/admin/contact-enquiries` | Paginated list; filters `status`, `topic`, `priority`, `consent`, `assigned`, `search`, `from`/`to` (IST days), `sort` |
+| `GET` | `/api/admin/contact-enquiries/export` | CSV with IST columns (same filters) |
+| `GET` | `/api/admin/contact-enquiries/:id` | Enquiry + activity timeline |
+| `PATCH` | `/api/admin/contact-enquiries/:id` | Change `status` / `priority` / `assigned_to`, optional `note` |
+| `POST` | `/api/admin/contact-enquiries/:id/contact-log` | Record a call / email / WhatsApp / SMS / meeting with the IST time it happened |
+| `POST` | `/api/admin/contact-enquiries/:id/notes` | Internal note |
+| `DELETE` | `/api/admin/contact-enquiries/:id` | **Super-admin only** (marketing marks `spam` / `closed`) |
+| `GET` | `/api/admin/newsletter-subscribers/stats` | Totals (today / 7d / month IST, unique IPs) |
+| `GET` | `/api/admin/newsletter-subscribers` | Paginated list; filters `search`, `device_type`, `from`/`to` (IST days), `sort` |
+| `GET` | `/api/admin/newsletter-subscribers/export` | CSV with IP, browser, OS, IST time |
+| `GET` | `/api/admin/newsletter-subscribers/:id` | One subscriber (full user agent) |
+| `POST` | `/api/public/newsletter` | Website form (no auth). Captures IP, browser, OS, device, user agent, page URL. Unique email. |
+| `GET` | `/api/admin/promos/stats` | Offer / event counts + live-on-header |
+| `GET` | `/api/admin/promos` | Paginated offers & events |
+| `POST` | `/api/admin/promos` | Create offer or event (slots, seats, IST deadline) |
+| `PUT` | `/api/admin/promos/:id` | Update |
+| `PATCH` | `/api/admin/promos/:id/status` | `active` / `draft` / `paused` |
+| `DELETE` | `/api/admin/promos/:id` | Remove |
+| `GET` | `/api/public/promos/header` | Active header bar item(s) for jurinex.ai (no auth) |
+| `POST` | `/api/public/promos/:id/book` | Book an event seat (optional `slot_id`, email) |
+
+**Contact enquiries — how it works**
+
+- The website posts to `POST /api/public/contact` (no auth, own CORS via `CONTACT_FORM_ALLOWED_ORIGINS`, 5 submissions / IP / 10 min, honeypot field `website`, 2-minute duplicate guard). Rows land in `contact_enquiries` (Auth DB) with reference `CE-YYYYMMDD-NNNNN` (IST date).
+- Every timestamp comes back as UTC **and** as an `*_ist` object (`display: "Fri, 11 Sep 2026, 02:35 PM IST"`), so the tab never needs to convert time zones.
+- "When did we contact them?" = `first_contacted_at_ist` / `last_contacted_at_ist`, set by the contact-log endpoint (or by moving status to `contacted`). `first_response_time` shows submitted → first contact.
+- Optional emails: `CONTACT_NOTIFY_EMAIL` (alert to the marketing inbox), `CONTACT_ACK_EMAIL_ENABLED=true` (acknowledgement to the visitor). Both off unless set.
+- Full request / response samples: [Backend/documentation.md → H) Contact Enquiries](../Backend/documentation.md#h-contact-enquiries-marketing).
 
 Create more: Super Admin → **Admin Management** → Create Admin → **Marketing Admin**.
 
@@ -244,6 +280,14 @@ Numbers are live from Payment DB; they change as payments land.
 | Plan analytics + totals | `Backend/controllers/planAnalyticsController.js` |
 | Analytics route roles | `Backend/routes/planAnalyticsRoutes.js`, `userAnalyticsRoutes.js` |
 | Demo bookings | `Backend/controllers/demoController.js` |
+| Contact enquiries (admin API) | `Backend/routes/contactEnquiryRoutes.js`, `Backend/controllers/contactEnquiryController.js`, `Backend/services/contactEnquiryService.js` |
+| Contact form public intake | `Backend/routes/publicContactRoutes.js`, `Backend/middleware/publicRateLimit.middleware.js` |
+| Newsletter subscribers (admin API) | `Backend/routes/newsletterSubscriberRoutes.js`, `Backend/controllers/newsletterSubscriberController.js`, `Backend/services/newsletterSubscriberService.js` |
+| Newsletter public intake | `Backend/routes/publicNewsletterRoutes.js` (`POST /api/public/newsletter`) |
+| Newsletter table | `Backend/migrations/create_newsletter_subscribers_table.sql` (`npm run migrate:newsletter-subscribers`) |
+| Offers & events (admin API) | `Backend/routes/marketingPromoRoutes.js`, `Backend/controllers/marketingPromoController.js`, `Backend/services/marketingPromoService.js` |
+| Offers public header | `Backend/routes/publicPromoRoutes.js` (`GET /api/public/promos/header`) |
+| Contact enquiry tables + IST helpers | `Backend/migrations/create_contact_enquiries_tables.sql` (`npm run migrate:contact-enquiries`), `Backend/utils/time.js` (`formatIST`), `Backend/utils/contactEnquiryEmails.js` |
 | Role seeds | `Backend/migrations/seed_marketing_admin_role.js`, `seed_finance_admin_role.js` |
 | Test logins | `Backend/migrations/seed_marketing_and_finance_test_admins.js` |
 
@@ -257,6 +301,10 @@ Numbers are live from Payment DB; they change as payments land.
 | Login landing + `[AuthLogin]` logs | `Frontend/src/components/auth/LoginPage.jsx` |
 | Income KPIs | `Frontend/src/pages/dashboard/PlanAnalytics.jsx` |
 | Finance view-only catalog | `Frontend/src/pages/dashboard/SubscriptionManagement.jsx` (`canMutate`) |
+| Marketing Contact Enquiries tab | `Frontend/src/pages/dashboard/ContactEnquiries.jsx`, `Frontend/src/services/contactEnquiryApi.js` |
+| Marketing Newsletter Subscribers tab | `Frontend/src/pages/dashboard/NewsletterSubscribers.jsx`, `Frontend/src/services/newsletterSubscriberApi.js` |
+| Marketing Offers & Events tab | `Frontend/src/pages/dashboard/MarketingPromos.jsx`, `Frontend/src/services/promoApi.js` |
+| User-site header bar | `Frontend/src/components/SitePromoBanner.jsx` (Landing + Login; jurinex.ai should call the same public API) |
 | Debug logger | `Frontend/src/utils/debugLogger.js` |
 
 ---
@@ -266,8 +314,15 @@ Numbers are live from Payment DB; they change as payments land.
 **Marketing Admin** (`marketing.admin@jurinex.dev` / `Marketing@1234`)
 
 - [ ] Login succeeds and opens Demo Bookings
-- [ ] Sidebar: Demo Bookings, AI Chatbot, Settings only
+- [ ] Sidebar: Demo Bookings, Contact Enquiries, Newsletter Subscribers, Offers & Events, AI Chatbot, Settings only
 - [ ] Bookings load; status / invite work
+- [ ] Contact Enquiries tab: KPI cards load, rows show "Submitted (IST)", drawer opens, "Log a contact" stamps first contacted time, no Delete button
+- [ ] Newsletter Subscribers tab: list shows email, IP, browser, OS, device, subscribed time (IST); drawer shows full user agent
+- [ ] Offers & Events: create an active offer with IST deadline; it appears above the header on `/` (logged out)
+- [ ] `GET /api/public/promos/header` returns the live offer; `GET /api/admin/promos` returns `200` for marketing-admin
+- [ ] `GET /api/admin/newsletter-subscribers` returns `200` with `subscribed_at_ist.display`
+- [ ] `GET /api/admin/contact-enquiries/stats` and list return `200` with `submitted_at_ist.display` in IST
+- [ ] `POST /api/admin/contact-enquiries/:id/contact-log` sets `first_contacted_at_ist`; `DELETE` returns `403` for marketing
 - [ ] `/dashboard/users` and `/dashboard/subscriptions` redirect away
 - [ ] `/dashboard/admins` is blocked
 - [ ] Backend shows `AUTH_LOGIN` then `DEMO_ADMIN`; browser shows `[AuthLogin]` + `[DemoManagement]`
@@ -307,7 +362,7 @@ Numbers are live from Payment DB; they change as payments land.
 
 Passwords and JWT bodies are never printed. Login logs `password: '[hidden]'` only.
 
-**Backend** (terminal running `npm start`): layers `AUTH_LOGIN`, `AUTH`, `PLAN_ANALYTICS`, `DEMO_ADMIN`, `PORTAL_ADMIN`. Finance/marketing JWT grant logs are `info`; other roles stay `debug`.
+**Backend** (terminal running `npm start`): layers `AUTH_LOGIN`, `AUTH`, `PLAN_ANALYTICS`, `DEMO_ADMIN`, `CONTACT_ENQUIRY`, `PORTAL_ADMIN`. Finance/marketing JWT grant logs are `info`; other roles stay `debug`.
 
 | Stage | What you should see |
 |---|---|
@@ -316,7 +371,9 @@ Passwords and JWT bodies are never printed. Login logs `password: '[hidden]'` on
 | Finance analytics | `Plan analytics summary loaded` with totals + monthly table |
 | Finance drill-in | `monthly subscribers` / `topup buyers` / `addon buyers` loaded |
 | Marketing demos | `Demo booking stats loaded`, `Demo bookings list loaded`, status / invite |
+| Marketing contact enquiries | `Contact enquiry submitted` (website), `Contact enquiry stats loaded`, `Contact enquiries list loaded`, `Contact enquiry: contact logged` with `contacted_at_ist` |
+| Marketing newsletter | `Newsletter subscriber saved` (website), `Newsletter subscriber stats loaded`, `Newsletter subscribers list loaded` |
 
-**Browser** (F12): `[AuthLogin]`, `[RequireRole]`, `[Sidebar]`, `[PlanAnalytics]`, `[AnalyticsApi]`, `[SubscriptionManagement]`, `[DemoManagement]`, `[CreateAdmin]`.
+**Browser** (F12): `[AuthLogin]`, `[RequireRole]`, `[Sidebar]`, `[PlanAnalytics]`, `[AnalyticsApi]`, `[SubscriptionManagement]`, `[DemoManagement]`, `[ContactEnquiries]`, `[CreateAdmin]`.
 
 Collapsed groups contain Summary / Input / Output / Metrics / table.

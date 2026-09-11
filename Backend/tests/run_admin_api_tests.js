@@ -375,6 +375,135 @@ async function runTests() {
     }
 
     // ════════════════════════════════════════════════════════════════════════
+    // H) Contact Enquiries (Marketing) — website form → IST timeline
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('\n── H) Contact Enquiries (Marketing) ──');
+    let enquiryId = null;
+    {
+        // Public intake: no Authorization header (the website calls this).
+        const stamp = Date.now();
+        const body = {
+            name: 'API', surname: 'Test', email: `api.test+${stamp}@example.com`, mobile: '+91 90000 00000',
+            organisationName: 'Automated Test', whatIsThisAbout: 'Pricing & plans',
+            additionalDetails: `automated test ${stamp}`, consent: true, pageUrl: 'https://jurinex.ai/contact',
+        };
+        const url = `${BASE_URL}/api/public/contact`;
+        const start = Date.now();
+        let res;
+        try {
+            res = await axios.post(url, body, { headers: { Origin: 'https://jurinex.ai' }, timeout: 15000, validateStatus: () => true });
+        } catch (e) {
+            res = { status: 0, data: null };
+        }
+        const latency = Date.now() - start;
+        const pass = res.status === 201 && res.data?.data?.reference_no && res.data?.data?.submitted_at_ist?.display;
+        addResult({
+            name: 'Public Contact Submit', group: 'Contact Enquiries', method: 'POST', path: '/api/public/contact',
+            purpose: 'Website "Contact Jurinex" form intake (no auth). Returns reference number + IST submission time.',
+            inputs: 'Body: { name, surname, email, mobile, organisationName, whatIsThisAbout, additionalDetails, consent, pageUrl }',
+            curl: `curl -s -X POST -H "Content-Type: application/json" -d '${JSON.stringify(body)}' "${url}"`,
+            expected: '201 + data.reference_no + data.submitted_at_ist', actual: res.status, pass,
+            latency, sample: truncate(res.data), errorDetail: null,
+        });
+        if (pass) enquiryId = res.data.data.id;
+    }
+    {
+        const r = await request('GET', '/api/admin/contact-enquiries/stats');
+        addResult({
+            name: 'Contact Enquiry Stats', group: 'Contact Enquiries', method: 'GET', path: '/api/admin/contact-enquiries/stats',
+            purpose: 'KPI totals (today / 7d / month in IST), response time, by-status, by-topic, 14-day trend.',
+            inputs: 'Headers: Authorization', curl: buildCurl('GET', '/api/admin/contact-enquiries/stats'),
+            expected: '200 + data.totals', actual: r.status, pass: r.status === 200 && r.data?.data?.totals !== undefined,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/contact-enquiries/meta');
+        addResult({
+            name: 'Contact Enquiry Meta', group: 'Contact Enquiries', method: 'GET', path: '/api/admin/contact-enquiries/meta',
+            purpose: 'Dropdown values (statuses, channels, topics) and assignable admins.',
+            inputs: 'Headers: Authorization', curl: buildCurl('GET', '/api/admin/contact-enquiries/meta'),
+            expected: '200 + data.statuses', actual: r.status, pass: r.status === 200 && Array.isArray(r.data?.data?.statuses),
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { status: 'open', sort: 'awaiting_longest', page: 1, limit: 5 };
+        const r = await request('GET', '/api/admin/contact-enquiries', { params });
+        addResult({
+            name: 'Contact Enquiry List', group: 'Contact Enquiries', method: 'GET', path: '/api/admin/contact-enquiries',
+            purpose: 'Paginated list with filters; every row carries submitted_at_ist.',
+            inputs: 'Query: status, topic, priority, consent, assigned, search, from, to, sort, page, limit',
+            curl: buildCurl('GET', '/api/admin/contact-enquiries', {}, null, params),
+            expected: '200 + data.enquiries[]', actual: r.status, pass: r.status === 200 && Array.isArray(r.data?.data?.enquiries),
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    if (enquiryId) {
+        {
+            const r = await request('GET', `/api/admin/contact-enquiries/${enquiryId}`);
+            addResult({
+                name: 'Contact Enquiry Detail', group: 'Contact Enquiries', method: 'GET', path: `/api/admin/contact-enquiries/${enquiryId}`,
+                purpose: 'Single enquiry + activity timeline.',
+                inputs: 'Params: id', curl: buildCurl('GET', `/api/admin/contact-enquiries/${enquiryId}`),
+                expected: '200 + data.enquiry + data.activities', actual: r.status,
+                pass: r.status === 200 && r.data?.data?.enquiry && Array.isArray(r.data?.data?.activities),
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        }
+        {
+            const body = { channel: 'call', outcome: 'connected', note: 'automated test call' };
+            const r = await request('POST', `/api/admin/contact-enquiries/${enquiryId}/contact-log`, { data: body });
+            addResult({
+                name: 'Contact Enquiry Contact Log', group: 'Contact Enquiries', method: 'POST', path: `/api/admin/contact-enquiries/${enquiryId}/contact-log`,
+                purpose: 'Record that the team contacted the lead; stamps first/last contacted time in IST and moves new → contacted.',
+                inputs: 'Body: { channel, outcome, note, contacted_at?, set_status? }',
+                curl: buildCurl('POST', `/api/admin/contact-enquiries/${enquiryId}/contact-log`, {}, body),
+                expected: '200 + enquiry.first_contacted_at_ist', actual: r.status,
+                pass: r.status === 200 && r.data?.data?.enquiry?.status === 'contacted' && r.data?.data?.enquiry?.first_contacted_at_ist?.display,
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        }
+        {
+            const body = { status: 'closed', priority: 'low', note: 'automated test close' };
+            const r = await request('PATCH', `/api/admin/contact-enquiries/${enquiryId}`, { data: body });
+            addResult({
+                name: 'Contact Enquiry Update', group: 'Contact Enquiries', method: 'PATCH', path: `/api/admin/contact-enquiries/${enquiryId}`,
+                purpose: 'Change status / priority / assignee with timeline entries.',
+                inputs: 'Body: { status?, priority?, assigned_to?, note? }',
+                curl: buildCurl('PATCH', `/api/admin/contact-enquiries/${enquiryId}`, {}, body),
+                expected: '200 + enquiry.status = closed', actual: r.status,
+                pass: r.status === 200 && r.data?.data?.enquiry?.status === 'closed',
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        }
+        {
+            const params = { search: 'api.test+' };
+            const r = await request('GET', '/api/admin/contact-enquiries/export', { params });
+            const isCsv = typeof r.data === 'string' && r.data.includes('Submitted (IST)');
+            addResult({
+                name: 'Contact Enquiry CSV Export', group: 'Contact Enquiries', method: 'GET', path: '/api/admin/contact-enquiries/export',
+                purpose: 'CSV export with IST columns; same filters as the list.',
+                inputs: 'Query: same as list', curl: buildCurl('GET', '/api/admin/contact-enquiries/export', {}, null, params),
+                expected: '200 text/csv', actual: r.status, pass: r.status === 200 && isCsv,
+                latency: r.latency, sample: typeof r.data === 'string' ? r.data.slice(0, 600) : truncate(r.data), errorDetail: r.error,
+            });
+        }
+        {
+            const r = await request('DELETE', `/api/admin/contact-enquiries/${enquiryId}`);
+            addResult({
+                name: 'Contact Enquiry Delete (cleanup)', group: 'Contact Enquiries', method: 'DELETE', path: `/api/admin/contact-enquiries/${enquiryId}`,
+                purpose: 'Remove the test enquiry (super-admin / static token only).',
+                inputs: 'Params: id', curl: buildCurl('DELETE', `/api/admin/contact-enquiries/${enquiryId}`),
+                expected: '200', actual: r.status, pass: r.status === 200,
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        }
+    } else {
+        console.log('  ⚠️  Public submit failed — skipping detail / contact-log / update / export / delete tests');
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
     // G) Authentication Negative Tests
     // ════════════════════════════════════════════════════════════════════════
     console.log('\n── G) Auth Negative Tests ──');

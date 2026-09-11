@@ -20,6 +20,8 @@ Portal roles (`super-admin`, `user-admin`, `account-admin`, `finance-admin`, `ma
 | Plans | `/api/admin/plans` | Payment DB |
 | Plan Analytics | `/api/admin/plan-analytics` | Payment DB + Auth DB |
 | Demo Bookings | `/api/admin/demo` | Auth / demo tables |
+| Contact Enquiries (Marketing) | `/api/admin/contact-enquiries` | Auth DB (`contact_enquiries`) — see [H](#h-contact-enquiries-marketing) |
+| Public contact-form intake | `/api/public/contact` | Auth DB — **no auth**, rate-limited, own CORS |
 | Health Check | `/api/admin/health` | Main DB + Citation DB |
 
 ---
@@ -421,6 +423,199 @@ curl http://localhost:4000/api/admin/health
 ```json
 { "success": false, "databases": { "authDB": "ok", "citationDB": "error: connect ECONNREFUSED" } }
 ```
+
+---
+
+## H) Contact Enquiries (Marketing)
+
+Enquiries submitted through the **"Contact Jurinex"** form on jurinex.ai (Name, Surname, Email, Mobile number,
+Organisation name, What is this about, Additional details, marketing-consent checkbox).
+
+- Tables: `contact_enquiries`, `contact_enquiry_activities` (Auth DB). Created by `npm run migrate:contact-enquiries`
+  and re-checked at server start.
+- **Every timestamp is returned twice**: `submitted_at` (UTC ISO) and `submitted_at_ist` — an object rendered in
+  Asia/Kolkata. The same pattern applies to `first_contacted_at`, `last_contacted_at`, `closed_at`, `updated_at`,
+  and activity `occurred_at`. Date filters (`from`, `to`) and the stats' `today` / `this_month` are IST calendar days.
+- Roles: `super-admin`, `admin`, `marketing-admin` (static `ADMIN_TOKEN` also works). `DELETE` is super-admin only —
+  marketing should set status `spam` / `closed` instead.
+- Workflow statuses: `new → contacted → in_progress → converted | closed | spam`.
+
+```json
+"submitted_at_ist": {
+  "iso": "2026-09-11T14:35:20+05:30",
+  "date": "11 Sep 2026",
+  "time": "02:35 PM",
+  "time24": "14:35",
+  "weekday": "Fri",
+  "display": "Fri, 11 Sep 2026, 02:35 PM IST",
+  "timezone": "Asia/Kolkata",
+  "utc": "2026-09-11T09:05:20.000Z",
+  "epoch_ms": 1789117520000
+}
+```
+
+### `POST /api/public/contact` — website intake (no auth)
+
+Called by the jurinex.ai form. JSON or `application/x-www-form-urlencoded`. Field names are flexible
+(`name`/`first_name`, `surname`/`last_name`, `mobile`/`phone`/`mobile_number`, `organisationName`/`company`,
+`whatIsThisAbout`/`topic`/`subject`, `additionalDetails`/`message`, `consent`/`marketing_consent`, `pageUrl`).
+A hidden `website` field acts as a honeypot (if filled → `202`, nothing stored).
+
+| Rule | Value |
+|---|---|
+| Required | Name, Surname, Email, Mobile number (7–25 digits, may start with `+`) |
+| Rate limit | `CONTACT_FORM_RATE_LIMIT` per IP per 10 min (default 5) → `429` + `Retry-After` |
+| Duplicate guard | same email + mobile + message within 2 min → `200` with `duplicate: true` |
+| CORS | `CONTACT_FORM_ALLOWED_ORIGINS` (comma list, default jurinex.ai + localhost dev ports) |
+| Notifications | `CONTACT_NOTIFY_EMAIL` (internal alert, optional) · `CONTACT_ACK_EMAIL_ENABLED=true` (visitor acknowledgement, optional) |
+
+```bash
+curl -X POST -H "Content-Type: application/json" -H "Origin: https://jurinex.ai" \
+  -d '{"name":"Asha","surname":"Rao","email":"asha@rao.law","mobile":"+91 98765 43210","organisationName":"Rao & Associates","whatIsThisAbout":"Pricing & plans","additionalDetails":"Pricing for 10 seats","consent":true,"pageUrl":"https://jurinex.ai/contact"}' \
+  http://localhost:4000/api/public/contact
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 42,
+    "reference_no": "CE-20260911-00042",
+    "duplicate": false,
+    "submitted_at": "2026-09-11T09:05:20.000Z",
+    "submitted_at_ist": { "display": "Fri, 11 Sep 2026, 02:35 PM IST", "...": "..." },
+    "message": "Thank you, Asha. A member of the Jurinex team will reply within one working day."
+  }
+}
+```
+
+### `GET /api/admin/contact-enquiries/stats`
+
+KPI cards + charts for the tab. All day buckets are IST.
+
+```json
+{
+  "success": true,
+  "data": {
+    "timezone": "Asia/Kolkata",
+    "generated_at_ist": { "display": "Fri, 11 Sep 2026, 02:40 PM IST" },
+    "totals": {
+      "total": 128, "open": 23, "new": 9, "contacted": 8, "in_progress": 6,
+      "converted": 31, "closed": 70, "spam": 4,
+      "today": 3, "yesterday": 5, "last_7_days": 21, "last_30_days": 64, "this_month": 27,
+      "with_marketing_consent": 97, "open_unassigned": 7, "new_older_than_24h": 2,
+      "ever_contacted": 115, "conversion_rate_pct": 24.2
+    },
+    "response_time": {
+      "avg_first_response_minutes": 212, "avg_first_response_display": "3h 32m",
+      "avg_first_response_minutes_30d": 148, "avg_first_response_display_30d": "2h 28m",
+      "target_minutes": 1440, "target_display": "1 working day"
+    },
+    "by_status": [ { "status": "new", "label": "New", "count": 9 } ],
+    "by_topic": [ { "topic": "Pricing & plans", "count": 40, "open": 6 } ],
+    "daily_trend": [ { "date": "2026-09-11", "label": "11 Sep", "submitted": 3, "with_consent": 2, "contacted": 1 } ],
+    "recent_new": [ { "id": 42, "reference_no": "CE-20260911-00042", "full_name": "Asha Rao", "submitted_at_ist": { "display": "…" } } ]
+  }
+}
+```
+
+### `GET /api/admin/contact-enquiries/meta`
+
+Dropdown values for the tab: `statuses`, `priorities`, `contact_channels`, `contact_outcomes`,
+`topics.suggested` + `topics.used` (with counts), `sort_options`, `assignable_admins` (marketing + super admins),
+`permissions.can_delete`.
+
+### `GET /api/admin/contact-enquiries`
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| page / limit | int | 1 / 20 | `limit` max 100 (`pageSize` accepted as alias) |
+| status | string | all | `all`, `open`, or comma list of `new,contacted,in_progress,converted,closed,spam` |
+| topic | string | — | exact match (case-insensitive) |
+| priority | string | — | `low` / `normal` / `high` |
+| consent | bool | — | marketing consent given |
+| assigned | `me` / `unassigned` / `any` / admin id | — | `me` needs a JWT login |
+| search | string | — | name, email, mobile, organisation, reference, topic, message |
+| from / to | YYYY-MM-DD | — | **IST calendar days**, inclusive |
+| sort | string | newest | `newest`, `oldest`, `name_asc`, `name_desc`, `status`, `priority`, `last_contacted`, `awaiting_longest` |
+
+```bash
+curl -H "Authorization: Bearer admin_secret_token_change_me" \
+  "http://localhost:4000/api/admin/contact-enquiries?status=open&sort=awaiting_longest&from=2026-09-01&to=2026-09-30"
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "enquiries": [
+      {
+        "id": 42, "reference_no": "CE-20260911-00042",
+        "first_name": "Asha", "last_name": "Rao", "full_name": "Asha Rao",
+        "email": "asha@rao.law", "mobile_number": "+91 98765 43210", "organisation_name": "Rao & Associates",
+        "topic": "Pricing & plans", "message": "Pricing for 10 seats",
+        "marketing_consent": true, "consent_given_at_ist": { "display": "Fri, 11 Sep 2026, 02:35 PM IST" },
+        "submitted_at": "2026-09-11T09:05:20.000Z",
+        "submitted_at_ist": { "display": "Fri, 11 Sep 2026, 02:35 PM IST", "date": "11 Sep 2026", "time": "02:35 PM" },
+        "submitted_ago": "3h 20m",
+        "status": "contacted", "status_label": "Contacted", "priority": "high", "priority_label": "High",
+        "assigned_to": { "id": 12, "name": "Marketing Admin", "email": "marketing.admin@jurinex.dev" },
+        "first_contacted_at_ist": { "display": "Fri, 11 Sep 2026, 04:10 PM IST" },
+        "first_contacted_by": { "id": 12, "name": "Marketing Admin" },
+        "last_contacted_at_ist": { "display": "Fri, 11 Sep 2026, 04:10 PM IST" },
+        "last_contact_channel": "call", "last_contact_channel_label": "Phone call", "contact_attempts": 1,
+        "first_response_minutes": 95, "first_response_time": "1h 35m",
+        "awaiting_first_contact": false, "awaiting_for": null,
+        "source": "website_contact_form", "page_url": "https://jurinex.ai/contact",
+        "timezone": "Asia/Kolkata"
+      }
+    ],
+    "pagination": { "page": 1, "limit": 20, "total": 23, "totalPages": 2 },
+    "filters": { "status": ["new", "contacted", "in_progress"], "sort": "awaiting_longest", "timezone": "Asia/Kolkata" }
+  }
+}
+```
+
+### `GET /api/admin/contact-enquiries/export`
+
+Same query params as the list. Returns `text/csv` (UTF-8 BOM, Excel-safe) with IST columns
+(`Submitted (IST)`, `First contacted (IST)`, `Last contacted (IST)`, `Closed (IST)`) plus `Submitted (UTC)`.
+Max 5000 rows; `X-Total-Rows` / `X-Exported-Rows` headers say if it was truncated.
+
+### `GET /api/admin/contact-enquiries/:id`
+
+`{ enquiry, activities }` — `activities` is the timeline (newest first): `submitted`, `status_changed`,
+`priority_changed`, `assigned`, `contact_logged`, `note_added`, each with `occurred_at_ist` and `actor`.
+
+### `PATCH /api/admin/contact-enquiries/:id`
+
+Body: any of `status`, `priority`, `assigned_to` (admin id or `null`), `note`. Each change is written to the
+timeline. Moving to `contacted` stamps `first_contacted_at` if empty; `converted` / `closed` / `spam` stamp
+`closed_at`; reopening clears it. `assigned_to` must be a marketing-admin or super-admin → else `400 INVALID_ASSIGNEE`.
+
+### `POST /api/admin/contact-enquiries/:id/contact-log` — "we contacted them"
+
+```json
+{ "channel": "call", "outcome": "connected", "note": "Spoke to Asha, sending deck", "contacted_at": "2026-09-11T10:40:00+05:30", "set_status": "in_progress" }
+```
+
+| Field | Values |
+|---|---|
+| channel (required) | `call`, `email`, `whatsapp`, `sms`, `meeting`, `other` |
+| outcome | `connected` (default), `no_answer`, `busy`, `callback_requested`, `wrong_number`, `email_sent`, `not_interested`, `other` |
+| contacted_at | ISO timestamp, defaults to now, cannot be in the future (back-dating allowed) |
+| set_status | optional; a `new` enquiry becomes `contacted` automatically |
+
+Stamps `first_contacted_at` (earliest attempt), `last_contacted_at`, `last_contact_channel`, bumps
+`contact_attempts`, and records who did it. The response includes `first_response_time` (submitted → first contact).
+
+### `POST /api/admin/contact-enquiries/:id/notes`
+
+`{ "note": "…" }` → timeline entry `note_added`.
+
+### `DELETE /api/admin/contact-enquiries/:id`
+
+Super-admin / static token only. Marketing admins get `403` — use status `spam` or `closed`.
 
 ---
 

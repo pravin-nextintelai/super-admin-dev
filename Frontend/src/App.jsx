@@ -19,6 +19,9 @@ import AgentList from './pages/dashboard/agent-prompt';
 import LLMManagement from './pages/dashboard/LLMManagement';
 import DocumentManagement from './pages/dashboard/DocumentManagement';
 import DemoManagement from './pages/dashboard/DemoManagement';
+import ContactEnquiries from './pages/dashboard/ContactEnquiries';
+import NewsletterSubscribers from './pages/dashboard/NewsletterSubscribers';
+import MarketingPromos from './pages/dashboard/MarketingPromos';
 import JudgementManagement from './pages/dashboard/JudgementManagement';
 import JudgementSearch from './pages/dashboard/JudgementSearch';
 import CitationManagement from './pages/dashboard/CitationManagement';
@@ -135,6 +138,9 @@ function App() {
             <Route path="llm-management" element={<RequireRole allow={[]}><LLMManagement /></RequireRole>} />
             <Route path="documents" element={<RequireRole allow={['marketing-admin']}><DocumentManagement /></RequireRole>} />
             <Route path="demo-bookings" element={<RequireRole allow={['marketing-admin']}><DemoManagement /></RequireRole>} />
+            <Route path="contact-enquiries" element={<RequireRole allow={['marketing-admin']}><ContactEnquiries /></RequireRole>} />
+            <Route path="newsletter-subscribers" element={<RequireRole allow={['marketing-admin']}><NewsletterSubscribers /></RequireRole>} />
+            <Route path="offers-events" element={<RequireRole allow={['marketing-admin']}><MarketingPromos /></RequireRole>} />
             <Route path="judgements" element={<RequireRole allow={[]}><JudgementManagement /></RequireRole>} />
             <Route path="judgement-search" element={<RequireRole allow={[]}><JudgementSearch /></RequireRole>} />
             <Route path="citation-management" element={<RequireRole allow={[]}><CitationManagement /></RequireRole>} />

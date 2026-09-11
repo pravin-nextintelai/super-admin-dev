@@ -60,6 +60,15 @@ const chatbotConfigRoutes = require('./routes/chatbotConfigRoutes');
 const chatbotTokenUsageRoutes = require('./routes/chatbotTokenUsageRoutes');
 const chatHistoryRoutes = require('./routes/chatHistoryRoutes');
 const demoRoutes = require('./routes/demoRoutes');
+const contactEnquiryRoutes = require('./routes/contactEnquiryRoutes');
+const publicContactRoutes = require('./routes/publicContactRoutes');
+const newsletterSubscriberRoutes = require('./routes/newsletterSubscriberRoutes');
+const publicNewsletterRoutes = require('./routes/publicNewsletterRoutes');
+const marketingPromoRoutes = require('./routes/marketingPromoRoutes');
+const publicPromoRoutes = require('./routes/publicPromoRoutes');
+const { ensureContactEnquirySchema } = require('./services/contactEnquiryService');
+const { ensureNewsletterSubscriberSchema } = require('./services/newsletterSubscriberService');
+const { ensureMarketingPromoSchema } = require('./services/marketingPromoService');
 const aiDocumentPool = require('./config/aiDocumentDB');
 const jurinexVoiceRoutes = require('./modules/jurinex-voice');
 const { attachAgentLiveTestSocket } = require('./modules/jurinex-voice/tests/agentLiveTest.socket');
@@ -67,6 +76,17 @@ const requestIdMiddleware = require('./middleware/requestId.middleware');
 const errorMiddleware = require('./middleware/error.middleware');
 const app = express();
 
+
+// --- Public website intake (no auth) ---
+// Mounted BEFORE the portal CORS allow-list: it carries its own CORS config
+// (CONTACT_FORM_ALLOWED_ORIGINS) so jurinex.ai can POST the contact form
+// without gaining access to any admin route.
+console.log('📌 /api/public/contact → "Contact Jurinex" form intake (Main DB, rate-limited, own CORS)');
+app.use('/api/public/contact', publicContactRoutes(pool));
+console.log('📌 /api/public/newsletter → Website newsletter subscribe (Main DB, rate-limited, own CORS)');
+app.use('/api/public/newsletter', publicNewsletterRoutes(pool));
+console.log('📌 /api/public/promos → Website header offers/events (Main DB, own CORS)');
+app.use('/api/public/promos', publicPromoRoutes(pool));
 
 // --- CORS ---
 const allowedOrigins = [
@@ -220,6 +240,13 @@ app.use('/api/admin/chat-history', chatHistoryRoutes(pool));
 
 console.log('📌 /api/admin/demo → Demo booking & slot management');
 app.use('/api/admin/demo', demoRoutes(pool));
+
+console.log('📌 /api/admin/contact-enquiries → Marketing: "Contact Jurinex" form enquiries (IST timeline, contact log, CSV)');
+app.use('/api/admin/contact-enquiries', contactEnquiryRoutes(pool));
+console.log('📌 /api/admin/newsletter-subscribers → Marketing: website newsletter list (IP, browser, OS, IST time)');
+app.use('/api/admin/newsletter-subscribers', newsletterSubscriberRoutes(pool));
+console.log('📌 /api/admin/promos → Marketing: header offers & events (deadline, slots, seats)');
+app.use('/api/admin/promos', marketingPromoRoutes(pool));
 
 console.log('🎙️  /admin/jurinex-voice → Voice agent management + KB (jurinex-voice-docs bucket)');
 app.use('/admin/jurinex-voice', jurinexVoiceRoutes(pool));
@@ -1014,6 +1041,15 @@ const startServer = async () => {
     await initializeSupportWorkspaceSchema();
     await initializeSupportPrioritiesTable();
     await initializeAIDocumentTables();
+    await ensureContactEnquirySchema(pool)
+      .then(() => console.log('✅ contact_enquiries tables ready (Main DB)'))
+      .catch((e) => console.error('❌ Error initializing contact_enquiries tables:', e.message));
+    await ensureNewsletterSubscriberSchema(pool)
+      .then(() => console.log('✅ newsletter_subscribers table ready (Main DB)'))
+      .catch((e) => console.error('❌ Error initializing newsletter_subscribers table:', e.message));
+    await ensureMarketingPromoSchema(pool)
+      .then(() => console.log('✅ marketing_promos tables ready (Main DB)'))
+      .catch((e) => console.error('❌ Error initializing marketing_promos tables:', e.message));
     await recoverStuckDocuments();
 
     const shutdown = async (signal) => {

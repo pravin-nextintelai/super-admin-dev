@@ -134,7 +134,7 @@ The dashboard defines six administrator roles. Access is enforced at three indep
 | `user-admin` | User Management (incl. per-user and per-firm analytics), Content Management (case type, court, judge), Settings | `/dashboard/users` |
 | `account-admin` | Subscription Management (create/edit/delete plans), Plan Analytics, Settings | `/dashboard/subscriptions` |
 | `finance-admin` | Plan Analytics (home), Subscription Management **view only**, per-user billing drill-in, Settings | `/dashboard/subscriptions/analytics` |
-| `marketing-admin` | AI Chatbot, Demo Bookings, Settings | `/dashboard/demo-bookings` |
+| `marketing-admin` | AI Chatbot, Demo Bookings, Contact Enquiries, Newsletter Subscribers, Settings | `/dashboard/demo-bookings` |
 | `support-admin` | Support & Help workspace, Settings | `/dashboard/support` |
 
 Admin, Role, Prompt, System-Prompt, Agent-Prompt, Template, Citation, LLM, and Voice management, plus Judgment upload and search, are **super-admin only**. Settings is available to every authenticated role. A `super-admin` (and the legacy generic `admin`) passes every check.
