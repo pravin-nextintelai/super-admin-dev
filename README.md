@@ -133,7 +133,7 @@ The dashboard defines six administrator roles. Access is enforced at three indep
 | `super-admin` | Every module | `/dashboard` |
 | `user-admin` | User Management (incl. per-user and per-firm analytics), Content Management (case type, court, judge), Settings | `/dashboard/users` |
 | `account-admin` | Subscription Management (create/edit/delete plans), Plan Analytics, Settings | `/dashboard/subscriptions` |
-| `finance-admin` | Plan Analytics (home), Subscription Management **view only**, per-user billing drill-in, Settings | `/dashboard/subscriptions/analytics` |
+| `finance-admin` | Users & Plans (home), Plan Analytics, Subscription Management **view only**, per-user billing drill-in, Settings | `/dashboard/subscriptions/users` |
 | `marketing-admin` | AI Chatbot, Demo Bookings, Contact Enquiries, Newsletter Subscribers, Settings | `/dashboard/demo-bookings` |
 | `support-admin` | Support & Help workspace, Settings | `/dashboard/support` |
 

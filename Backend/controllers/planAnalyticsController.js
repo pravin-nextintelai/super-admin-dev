@@ -322,6 +322,351 @@ exports.getAddonBuyers = async (req, res, pools) => {
     }
 };
 
+const clampPage = (v, def = 1) => {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) && n >= 1 ? n : def;
+};
+const clampPageSize = (v, def = 25) => {
+    const n = parseInt(v, 10);
+    if (!Number.isFinite(n) || n < 1) return def;
+    return Math.min(n, 50);
+};
+const MONTH_RE = /^\d{4}-\d{2}$/;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const EXPORT_LIMIT = 10000;
+
+function parseSubscriberQuery(query) {
+    const page = clampPage(query.page);
+    const pageSize = clampPageSize(query.pageSize);
+    const planIdRaw = parseInt(query.planId, 10);
+    const topupPlanIdRaw = parseInt(query.topupPlanId, 10);
+    const addonPlanIdRaw = parseInt(query.addonPlanId, 10);
+    const day = DAY_RE.test(String(query.day || '').trim()) ? String(query.day).trim() : null;
+    return {
+        page,
+        pageSize,
+        planId: Number.isFinite(planIdRaw) ? planIdRaw : null,
+        topupPlanId: Number.isFinite(topupPlanIdRaw) ? topupPlanIdRaw : null,
+        addonPlanId: Number.isFinite(addonPlanIdRaw) ? addonPlanIdRaw : null,
+        day,
+        month: !day && MONTH_RE.test(String(query.month || '').trim()) ? String(query.month).trim() : null,
+        search: String(query.search || '').trim().slice(0, 120),
+        status: /^[a-z0-9_]{1,32}$/.test(String(query.status || '').trim().toLowerCase())
+            ? String(query.status).trim().toLowerCase()
+            : null,
+    };
+}
+
+function buildSubscriberWhere(filters) {
+    const where = [];
+    const params = [];
+    const add = (clause, value) => {
+        params.push(value);
+        where.push(clause.replace('$?', `$${params.length}`));
+    };
+    if (filters.planId != null) add('us.monthly_plan_id = $?', filters.planId);
+    if (filters.topupPlanId != null) {
+        add(
+            `EXISTS (
+                SELECT 1 FROM user_token_topup_purchases up
+                WHERE up.user_id = bu.user_id AND up.topup_plan_id = $?
+            )`,
+            filters.topupPlanId
+        );
+    }
+    if (filters.addonPlanId != null) {
+        add(
+            `EXISTS (
+                SELECT 1 FROM user_storage_addon_purchases ap
+                WHERE ap.user_id = bu.user_id AND ap.addon_plan_id = $?
+            )`,
+            filters.addonPlanId
+        );
+    }
+    if (filters.status === 'pack_only') where.push('us.user_id IS NULL');
+    else if (filters.status) add('LOWER(COALESCE(us.status, \'\')) = $?', filters.status);
+    if (filters.searchIds) add('bu.user_id = ANY($?::int[])', filters.searchIds);
+    const joinedIst = `(${JOINED_AT_SQL} AT TIME ZONE 'Asia/Kolkata')`;
+    if (filters.day) add(`${joinedIst}::date = $?::date`, filters.day);
+    else if (filters.month) add(`to_char(${joinedIst}, 'YYYY-MM') = $?`, filters.month);
+    return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+async function resolveSearchIds(authPool, search, limit = 500) {
+    if (!search) return { searchIds: null, empty: false };
+    const { rows } = await authPool.query(
+        `SELECT id FROM users
+         WHERE username ILIKE $1 OR email ILIKE $1
+         LIMIT $2`,
+        [`%${search}%`, limit]
+    );
+    const searchIds = rows.map((r) => r.id);
+    return { searchIds, empty: searchIds.length === 0 };
+}
+
+const PAID_STATUSES = `'captured','paid','success','succeeded','completed'`;
+
+/** First activity: monthly join if present, otherwise earliest pack purchase. */
+const JOINED_AT_SQL = `COALESCE(
+  us.created_at,
+  us.start_date,
+  (SELECT MIN(up.created_at) FROM user_token_topup_purchases up WHERE up.user_id = bu.user_id),
+  (SELECT MIN(ua.created_at) FROM user_storage_addon_purchases ua WHERE ua.user_id = bu.user_id)
+)`;
+
+/** One row per buyer: monthly subscribers ∪ top-up buyers ∪ add-on buyers. */
+const SUBSCRIBER_FROM = `FROM (
+  SELECT user_id FROM user_subscriptions
+  UNION
+  SELECT user_id FROM user_token_topup_purchases
+  UNION
+  SELECT user_id FROM user_storage_addon_purchases
+) bu
+LEFT JOIN LATERAL (
+  SELECT *
+  FROM user_subscriptions s
+  WHERE s.user_id = bu.user_id
+  ORDER BY
+    CASE WHEN LOWER(COALESCE(s.status, '')) IN ('active', 'topup_only') THEN 0 ELSE 1 END,
+    COALESCE(s.created_at, s.start_date) DESC NULLS LAST
+  LIMIT 1
+) us ON true
+LEFT JOIN monthly_plans mp ON mp.id = us.monthly_plan_id`;
+
+const SUBSCRIBER_SELECT = `SELECT bu.user_id,
+                    COALESCE(us.status, 'pack_only') AS status,
+                    us.start_date,
+                    us.end_date,
+                    us.created_at,
+                    ${JOINED_AT_SQL} AS joined_at,
+                    COALESCE(us.current_token_balance, 0)::bigint AS current_token_balance,
+                    COALESCE(us.topup_token_balance, 0)::bigint AS topup_token_balance,
+                    mp.id AS plan_id,
+                    mp.name AS plan_name,
+                    mp.category AS plan_category,
+                    mp.price AS plan_price,
+                    mp.currency AS plan_currency,
+                    (SELECT string_agg(DISTINCT tp.name, ', ' ORDER BY tp.name)
+                     FROM user_token_topup_purchases up
+                     JOIN topup_plans tp ON tp.id = up.topup_plan_id
+                     WHERE up.user_id = bu.user_id) AS topup_plan_names,
+                    (SELECT string_agg(DISTINCT ap.name, ', ' ORDER BY ap.name)
+                     FROM user_storage_addon_purchases ua
+                     JOIN addon_plans ap ON ap.id = ua.addon_plan_id
+                     WHERE ua.user_id = bu.user_id) AS addon_plan_names,
+                    (
+                      COALESCE((
+                        SELECT SUM(p.amount) FILTER (WHERE LOWER(COALESCE(p.status, '')) IN (${PAID_STATUSES}))
+                        FROM payments p WHERE p.user_id = bu.user_id
+                      ), 0)
+                      + COALESCE((
+                        SELECT SUM(up.amount) FILTER (WHERE LOWER(COALESCE(up.status, '')) IN (${PAID_STATUSES}))
+                        FROM user_token_topup_purchases up WHERE up.user_id = bu.user_id
+                      ), 0)
+                      + COALESCE((
+                        SELECT SUM(ua.amount) FILTER (WHERE LOWER(COALESCE(ua.status, '')) IN (${PAID_STATUSES}))
+                        FROM user_storage_addon_purchases ua WHERE ua.user_id = bu.user_id
+                      ), 0)
+                    )::numeric AS paid_total,
+                    GREATEST(
+                      (SELECT MAX(p.created_at) FROM payments p
+                       WHERE p.user_id = bu.user_id AND LOWER(COALESCE(p.status, '')) IN (${PAID_STATUSES})),
+                      (SELECT MAX(up.created_at) FROM user_token_topup_purchases up
+                       WHERE up.user_id = bu.user_id AND LOWER(COALESCE(up.status, '')) IN (${PAID_STATUSES})),
+                      (SELECT MAX(ua.created_at) FROM user_storage_addon_purchases ua
+                       WHERE ua.user_id = bu.user_id AND LOWER(COALESCE(ua.status, '')) IN (${PAID_STATUSES}))
+                    ) AS last_paid_at
+             ${SUBSCRIBER_FROM}`;
+
+function csvCell(value) {
+    if (value == null || value === '') return '';
+    let s = String(value);
+    if (/^[=+\-@]/.test(s)) s = `'${s}`;
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+}
+
+/** Excel-friendly IST timestamp (no T/Z so Excel keeps it as text/date). */
+function toExcelDate(value) {
+    if (!value) return '';
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return '';
+    const parts = Object.fromEntries(
+        new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Kolkata',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }).formatToParts(dt).map((p) => [p.type, p.value])
+    );
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function subscribersToCsv(rows) {
+    const header = [
+        'User ID', 'Username', 'Email', 'Blocked', 'Plan', 'Plan category',
+        'Status', 'Joined at', 'Top-up packs', 'Add-ons', 'Paid total', 'Last paid at',
+        'Plan balance', 'Top-up balance',
+    ];
+    const lines = [header.map(csvCell).join(',')];
+    rows.forEach((r) => {
+        lines.push([
+            r.user_id,
+            r.username,
+            r.email,
+            r.is_blocked ? 'yes' : 'no',
+            r.plan_name,
+            r.plan_category,
+            r.status,
+            toExcelDate(r.joined_at || r.created_at || r.start_date),
+            r.topup_plan_names,
+            r.addon_plan_names,
+            r.paid_total,
+            toExcelDate(r.last_paid_at),
+            r.current_token_balance,
+            r.topup_token_balance,
+        ].map(csvCell).join(','));
+    });
+    return `\uFEFF${lines.join('\r\n')}\r\n`;
+}
+
+async function loadSubscriberFacets(paymentPool) {
+    const [plans, topupPlans, addonRes, statusRes] = await Promise.all([
+        paymentPool.query(`SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`),
+        paymentPool.query(`SELECT id, name FROM topup_plans ORDER BY sort_order ASC, id ASC`),
+        paymentPool.query(`SELECT id, name FROM addon_plans ORDER BY sort_order ASC, id ASC`).catch(() => ({ rows: [] })),
+        paymentPool.query(
+            `SELECT DISTINCT LOWER(COALESCE(status, 'active')) AS status
+             FROM user_subscriptions
+             WHERE COALESCE(status, '') <> ''
+             ORDER BY 1`
+        ).catch(() => ({ rows: [{ status: 'active' }, { status: 'topup_only' }] })),
+    ]);
+    const known = ['active', 'topup_only', 'pack_only', 'cancelled', 'expired', 'inactive'];
+    const fromDb = statusRes.rows.map((r) => r.status).filter(Boolean);
+    const statuses = [...new Set([...known, ...fromDb])];
+    return { plans: plans.rows, topupPlans: topupPlans.rows, addonPlans: addonRes.rows, statuses };
+}
+
+/**
+ * GET /subscribers — paginated list of plan buyers (monthly ∪ top-up ∪ add-on).
+ * Query: page, pageSize, planId, topupPlanId, addonPlanId, month (YYYY-MM), day (YYYY-MM-DD), search, status.
+ * Day overrides month. Search matches Auth DB username/email then filters Payment rows.
+ */
+exports.getSubscribers = async (req, res, pools) => {
+    const filters = parseSubscriberQuery(req.query);
+    const { page, pageSize, planId, topupPlanId, addonPlanId, day, month, search, status } = filters;
+    const offset = (page - 1) * pageSize;
+
+    try {
+        const found = await resolveSearchIds(pools.authPool, search);
+        if (found.empty) {
+            const facets = await loadSubscriberFacets(pools.paymentPool);
+            logPortalFlow(req, 'Plan analytics subscribers list loaded', {
+                layer: 'PLAN_ANALYTICS',
+                summary: { page, pageSize, planId, topupPlanId, addonPlanId, month, day, search, status, total: 0, rowCount: 0 },
+            });
+            return res.status(200).json({
+                success: true,
+                data: { rows: [], total: 0, page, pageSize, filters: facets },
+            });
+        }
+
+        const { whereSql, params } = buildSubscriberWhere({ ...filters, searchIds: found.searchIds });
+        const countRes = await pools.paymentPool.query(
+            `SELECT COUNT(*)::int AS total ${SUBSCRIBER_FROM} ${whereSql}`,
+            params
+        );
+        const total = countRes.rows[0]?.total || 0;
+        const listParams = [...params, pageSize, offset];
+        const { rows } = await pools.paymentPool.query(
+            `${SUBSCRIBER_SELECT}
+             ${whereSql}
+             ORDER BY ${JOINED_AT_SQL} DESC NULLS LAST, bu.user_id DESC
+             LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+            listParams
+        );
+
+        const enriched = await attachUsers(rows, pools.authPool);
+        const facets = await loadSubscriberFacets(pools.paymentPool);
+        logPortalFlow(req, 'Plan analytics subscribers list loaded', {
+            layer: 'PLAN_ANALYTICS',
+            summary: {
+                page, pageSize, planId, topupPlanId, addonPlanId, month, day,
+                search: search || null, status, total, rowCount: enriched.length,
+            },
+            table: enriched.slice(0, 8).map((r) => ({
+                user_id: r.user_id, email: r.email, plan_name: r.plan_name, status: r.status,
+            })),
+        });
+        return res.status(200).json({
+            success: true,
+            data: { rows: enriched, total, page, pageSize, filters: facets },
+        });
+    } catch (e) {
+        logger.errorWithContext('Plan analytics subscribers list failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { page, pageSize, planId, topupPlanId, addonPlanId, month, day, search: search || null, status },
+        });
+        return res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+/** GET /subscribers/export — CSV of all matching rows (same filters as the list, no page cap besides EXPORT_LIMIT). */
+exports.exportSubscribers = async (req, res, pools) => {
+    const filters = parseSubscriberQuery(req.query);
+    const { planId, topupPlanId, addonPlanId, day, month, search, status } = filters;
+    const filtered = Boolean(search || planId || topupPlanId || addonPlanId || month || day || status);
+
+    try {
+        const found = await resolveSearchIds(pools.authPool, search, 5000);
+        if (found.empty) {
+            const csv = subscribersToCsv([]);
+            logPortalFlow(req, 'Plan analytics subscribers CSV exported', {
+                layer: 'PLAN_ANALYTICS',
+                summary: { planId, topupPlanId, addonPlanId, month, day, search, status, filtered, rowCount: 0 },
+            });
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="users-plans-${filtered ? 'filtered-' : ''}${new Date().toISOString().slice(0, 10)}.csv"`);
+            return res.status(200).send(csv);
+        }
+
+        const { whereSql, params } = buildSubscriberWhere({ ...filters, searchIds: found.searchIds });
+        const { rows } = await pools.paymentPool.query(
+            `${SUBSCRIBER_SELECT}
+             ${whereSql}
+             ORDER BY ${JOINED_AT_SQL} DESC NULLS LAST, bu.user_id DESC
+             LIMIT ${EXPORT_LIMIT}`,
+            params
+        );
+        const enriched = await attachUsers(rows, pools.authPool);
+        const csv = subscribersToCsv(enriched);
+        const stamp = new Date().toISOString().slice(0, 10);
+        const filename = `users-plans-${filtered ? 'filtered-' : ''}${stamp}.csv`;
+        logPortalFlow(req, 'Plan analytics subscribers CSV exported', {
+            layer: 'PLAN_ANALYTICS',
+            summary: {
+                planId, topupPlanId, addonPlanId, month, day,
+                search: search || null, status, filtered, rowCount: enriched.length,
+            },
+        });
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.status(200).send(csv);
+    } catch (e) {
+        logger.errorWithContext('Plan analytics subscribers CSV export failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { planId, topupPlanId, addonPlanId, month, day, search: search || null, status, filtered },
+        });
+        return res.status(500).json({ success: false, message: e.message });
+    }
+};
+
 exports.getTopupBuyers = async (req, res, pools) => {
     const planId = parseInt(req.params.planId, 10);
     if (!Number.isFinite(planId)) return res.status(400).json({ success: false, message: 'Invalid plan id' });

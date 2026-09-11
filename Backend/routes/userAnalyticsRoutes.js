@@ -2,7 +2,7 @@ const express = require('express');
 
 // Read-only analytics aggregates across multiple DBs. Pools are singletons (same as other routes).
 const paymentPool = require('../config/payment_DB');
-const aiDocumentPool = require('../config/aiDocumentDB');
+const docPool = require('../config/docDB');
 const draftPool = require('../config/draftDB');
 const citationPool = require('../config/citationDB');
 const { protect, authorize } = require('../middleware/authMiddleware');
@@ -10,10 +10,10 @@ const { protect, authorize } = require('../middleware/authMiddleware');
 // authPool (Main/Auth DB) is passed in by server.js — used for auth + users/firms lookups.
 module.exports = (authPool) => {
   const router = express.Router();
-  const pools = { authPool, paymentPool, aiDocumentPool, draftPool, citationPool };
+  const pools = { authPool, paymentPool, docPool, draftPool, citationPool };
 
   // Same guard the working /api/users admin endpoints use, so the existing dashboard token works.
-  router.use(protect(authPool), authorize(['user-admin', 'super-admin', 'finance-admin']));
+  router.use(protect(authPool), authorize(['user-admin', 'super-admin', 'account-admin', 'finance-admin']));
 
   // Hot-reload controller so edits apply without restarting `npm start`.
   const load = () => {

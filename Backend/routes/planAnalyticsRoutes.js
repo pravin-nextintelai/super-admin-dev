@@ -18,6 +18,8 @@ module.exports = (authPool) => {
 
   // Mounted at /api/admin/plan-analytics
   router.get('/summary', (req, res) => load().getSummary(req, res, pools));
+  router.get('/subscribers/export', (req, res) => load().exportSubscribers(req, res, pools));
+  router.get('/subscribers', (req, res) => load().getSubscribers(req, res, pools));
   router.get('/monthly/:planId/subscribers', (req, res) => load().getMonthlySubscribers(req, res, pools));
   router.get('/topup/:planId/buyers', (req, res) => load().getTopupBuyers(req, res, pools));
   router.get('/addon/:planId/buyers', (req, res) => load().getAddonBuyers(req, res, pools));

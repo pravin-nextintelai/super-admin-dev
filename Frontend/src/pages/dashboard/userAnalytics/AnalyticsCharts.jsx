@@ -21,9 +21,9 @@ export const KpiCard = ({ icon: Icon, label, value, sub, tone = 'slate' }) => {
   );
 };
 
-export const ChartCard = ({ title, subtitle, children, right }) => (
-  <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-    <div className="flex items-start justify-between gap-3 mb-4">
+export const ChartCard = ({ title, subtitle, children, right, compact }) => (
+  <section className={`bg-white border border-slate-200 rounded-xl shadow-sm ${compact ? 'p-3' : 'p-5'}`}>
+    <div className={`flex items-start justify-between gap-3 ${compact ? 'mb-2.5' : 'mb-4'}`}>
       <div>
         <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
         {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
@@ -92,7 +92,7 @@ export const SectionErrorBanner = ({ errors }) => {
 /* ── status pill for payments ── */
 export const StatusPill = ({ status }) => {
   const s = String(status || '').toLowerCase();
-  const ok = ['captured', 'paid', 'success', 'succeeded'].includes(s);
+  const ok = ['captured', 'paid', 'success', 'succeeded', 'completed', 'active'].includes(s);
   const fail = ['failed', 'cancelled', 'canceled'].includes(s);
   const cls = ok ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : fail ? 'bg-red-50 text-red-700 border-red-100' : 'bg-slate-50 text-slate-600 border-slate-200';
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border capitalize ${cls}`}>{status || 'unknown'}</span>;

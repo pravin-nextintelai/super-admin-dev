@@ -57,7 +57,7 @@ Seeded into `Auth_DB.super_admins`. Use them at **http://localhost:3001/login**.
 | Role | Name | Email | Password | Lands on |
 |---|---|---|---|---|
 | **Marketing Admin** | Marketing Admin | `marketing.admin@jurinex.dev` | `Marketing@1234` | `/dashboard/demo-bookings` |
-| **Finance Admin** | Finance Admin | `finance.admin@jurinex.dev` | `Finance@1234` | `/dashboard/subscriptions/analytics` |
+| **Finance Admin** | Finance Admin | `finance.admin@jurinex.dev` | `Finance@1234` | `/dashboard/subscriptions/users` |
 
 **How to test**
 
@@ -88,7 +88,7 @@ Portal roles live in `admin_roles`. Create Admin fails with `Invalid role` if th
 | `super-admin` | Super Admin | Full portal, including creating other admins | `/dashboard` |
 | `user-admin` | User Admin | Jurinex users, firms, per-user analytics, content | `/dashboard/users` |
 | `account-admin` | Account Admin | Create / edit / delete subscription plans | `/dashboard/subscriptions` |
-| `finance-admin` | Finance Admin | **Read-only** money: subscriptions, paid users, amounts, income | `/dashboard/subscriptions/analytics` |
+| `finance-admin` | Finance Admin | **Read-only** money: subscriptions, paid users, amounts, income | `/dashboard/subscriptions/users` |
 | `marketing-admin` | Marketing Admin | Demo bookings, website contact enquiries, newsletter subscribers + AI chatbot documents | `/dashboard/demo-bookings` |
 | `support-admin` | Support Admin | Support workspace / tickets | `/dashboard/support` |
 
@@ -102,9 +102,9 @@ Super Admin can open every page. Other roles:
 
 | Page | Path | Super | User | Account | **Finance** | **Marketing** | Support |
 |---|---|---|---|---|---|---|---|
-| Dashboard | `/dashboard` | ✓ | redirected to users | redirected to subscriptions | redirected to analytics | redirected to demos | redirected to support |
+| Dashboard | `/dashboard` | ✓ | redirected to users | redirected to subscriptions | redirected to users & plans | redirected to demos | redirected to support |
 | User Management | `/dashboard/users` | ✓ | ✓ | | | | |
-| User / firm analytics | `/dashboard/users/:id/analytics` | ✓ | ✓ | | ✓ (from plan drill-in) | | |
+| User / firm analytics | `/dashboard/users/:id/analytics` | ✓ | ✓ | ✓ (from Users & Plans) | ✓ (from plan / users drill-in) | | |
 | Admin Management | `/dashboard/admins` | ✓ | | | | | |
 | Prompt / LLM / Templates / Roles / Voice / Judgements / Citations | various | ✓ | | | | | |
 | AI Chatbot | `/dashboard/documents` | ✓ | | | | ✓ | |
@@ -113,7 +113,8 @@ Super Admin can open every page. Other roles:
 | Newsletter Subscribers | `/dashboard/newsletter-subscribers` | ✓ | | | | ✓ | |
 | Offers & Events | `/dashboard/offers-events` | ✓ | | | | ✓ | |
 | Subscription catalog | `/dashboard/subscriptions` | ✓ | | ✓ (edit) | ✓ **view only** | | |
-| Plan Analytics | `/dashboard/subscriptions/analytics` | ✓ | | ✓ | ✓ **home** | | |
+| Plan Analytics | `/dashboard/subscriptions/analytics` | ✓ | | ✓ | ✓ | | |
+| Users & Plans | `/dashboard/subscriptions/users` | ✓ | | ✓ | ✓ **home** | | |
 | Support | `/dashboard/support` | ✓ | | | | | ✓ |
 | Settings | `/dashboard/settings` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
@@ -186,7 +187,8 @@ Sees **who paid** and **how much**. Does not change plans, users, or demos.
 
 | Sidebar | Behaviour |
 |---|---|
-| **Plan Analytics** | Default home. Totals + per-plan tables + drill-in to buyers |
+| **Users & Plans** | Default home. All monthly + top-up + add-on buyers, filters, CSV export |
+| **Plan Analytics** | Totals + per-plan tables + drill-in to buyers |
 | **Subscription Management** | Catalog only (`canMutate === false`) |
 | **Settings** | Profile / logout |
 
@@ -229,7 +231,7 @@ Landing paths (`Frontend/src/App.jsx` `ROLE_HOME` and `LoginPage.jsx`):
 | `super-admin` | `/dashboard` |
 | `user-admin` | `/dashboard/users` |
 | `account-admin` | `/dashboard/subscriptions` |
-| `finance-admin` | `/dashboard/subscriptions/analytics` |
+| `finance-admin` | `/dashboard/subscriptions/users` |
 | `marketing-admin` | `/dashboard/demo-bookings` |
 | `support-admin` | `/dashboard/support` |
 
@@ -242,11 +244,17 @@ Mounted at `/api/admin/plan-analytics`. Roles: `super-admin`, `user-admin`, `acc
 | Method | Path |
 |---|---|
 | `GET` | `/summary` |
+| `GET` | `/subscribers` |
+| `GET` | `/subscribers/export` |
 | `GET` | `/monthly/:planId/subscribers` |
 | `GET` | `/topup/:planId/buyers` |
 | `GET` | `/addon/:planId/buyers` |
 
-User billing drill-in: `/api/admin/user-analytics/*` allows `super-admin`, `user-admin`, `finance-admin`.
+`GET /subscribers` is the paginated Users & Plans list (monthly subscribers plus top-up / add-on-only buyers). Query: `page`, `pageSize` (max 50), `planId`, `topupPlanId`, `addonPlanId`, `month` (`YYYY-MM`), `day` (`YYYY-MM-DD`, overrides month), `search` (username/email), optional `status` (`active`, `topup_only`, `pack_only`, …). Response includes `data.rows`, `data.total`, and `data.filters` (`plans`, `topupPlans`, `addonPlans`, `statuses`). Rows include pack names, `paid_total`, and `last_paid_at`.
+
+`GET /subscribers/export` downloads a UTF-8 CSV (BOM + IST dates) of **all matching rows** (same filters, not just the current page). Open in Excel. No filters = full list. Filters = only those rows. Cap 10,000 rows.
+
+User billing drill-in: `/api/admin/user-analytics/*` allows `super-admin`, `user-admin`, `account-admin`, `finance-admin`.
 
 Example `data.totals` from `/summary`:
 
@@ -297,9 +305,10 @@ Numbers are live from Payment DB; they change as payments land.
 |---|---|
 | Create / edit role dropdowns | `Frontend/src/components/auth/Admins/CreateAdmin.jsx`, `AdminManagement.jsx` |
 | Route guard + home | `Frontend/src/App.jsx` (`ROLE_HOME`, `RequireRole`) |
-| Sidebar (incl. Plan Analytics item) | `Frontend/src/pages/dashboard/Sidebar.jsx` |
+| Sidebar (incl. Plan Analytics + Users & Plans) | `Frontend/src/pages/dashboard/Sidebar.jsx` |
 | Login landing + `[AuthLogin]` logs | `Frontend/src/components/auth/LoginPage.jsx` |
 | Income KPIs | `Frontend/src/pages/dashboard/PlanAnalytics.jsx` |
+| Users & Plans list | `Frontend/src/pages/dashboard/FinanceSubscribers.jsx` |
 | Finance view-only catalog | `Frontend/src/pages/dashboard/SubscriptionManagement.jsx` (`canMutate`) |
 | Marketing Contact Enquiries tab | `Frontend/src/pages/dashboard/ContactEnquiries.jsx`, `Frontend/src/services/contactEnquiryApi.js` |
 | Marketing Newsletter Subscribers tab | `Frontend/src/pages/dashboard/NewsletterSubscribers.jsx`, `Frontend/src/services/newsletterSubscriberApi.js` |
@@ -370,10 +379,11 @@ Passwords and JWT bodies are never printed. Login logs `password: '[hidden]'` on
 | JWT / authorize | `Admin JWT accepted` and `Authorization granted` |
 | Finance analytics | `Plan analytics summary loaded` with totals + monthly table |
 | Finance drill-in | `monthly subscribers` / `topup buyers` / `addon buyers` loaded |
+| Users & Plans list | `Plan analytics subscribers list loaded` with filters + rowCount |
 | Marketing demos | `Demo booking stats loaded`, `Demo bookings list loaded`, status / invite |
 | Marketing contact enquiries | `Contact enquiry submitted` (website), `Contact enquiry stats loaded`, `Contact enquiries list loaded`, `Contact enquiry: contact logged` with `contacted_at_ist` |
 | Marketing newsletter | `Newsletter subscriber saved` (website), `Newsletter subscriber stats loaded`, `Newsletter subscribers list loaded` |
 
-**Browser** (F12): `[AuthLogin]`, `[RequireRole]`, `[Sidebar]`, `[PlanAnalytics]`, `[AnalyticsApi]`, `[SubscriptionManagement]`, `[DemoManagement]`, `[ContactEnquiries]`, `[CreateAdmin]`.
+**Browser** (F12): `[AuthLogin]`, `[RequireRole]`, `[Sidebar]`, `[PlanAnalytics]`, `[FinanceSubscribers]`, `[AnalyticsApi]`, `[SubscriptionManagement]`, `[DemoManagement]`, `[ContactEnquiries]`, `[CreateAdmin]`.
 
 Collapsed groups contain Summary / Input / Output / Metrics / table.

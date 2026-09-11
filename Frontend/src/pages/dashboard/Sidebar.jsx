@@ -28,6 +28,7 @@ import {
   Inbox,
   Mail,
   Megaphone,
+  Contact,
 } from 'lucide-react';
 import { createDebugLogger } from '../../utils/debugLogger';
 
@@ -212,6 +213,12 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
       name: 'Plan Analytics',
       path: '/dashboard/subscriptions/analytics',
       icon: BarChart3,
+      roles: ['super-admin', 'account-admin', 'finance-admin']
+    },
+    {
+      name: 'Users & Plans',
+      path: '/dashboard/subscriptions/users',
+      icon: Contact,
       roles: ['super-admin', 'account-admin', 'finance-admin']
     },
     {
