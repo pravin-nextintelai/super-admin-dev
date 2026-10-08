@@ -21,6 +21,7 @@ Portal roles (`super-admin`, `user-admin`, `account-admin`, `finance-admin`, `ma
 | Plan Analytics | `/api/admin/plan-analytics` | Payment DB + Auth DB |
 | Demo Bookings | `/api/admin/demo` | Auth / demo tables |
 | Contact Enquiries (Marketing) | `/api/admin/contact-enquiries` | Auth DB (`contact_enquiries`) — see [H](#h-contact-enquiries-marketing) |
+| Error Logs (Platform) | `/api/admin/error-logs` | Document_DB (`error_logs`) + Auth DB (user lookup) — see [I](#i-error-logs-platform) / [docs/ERROR_LOGS_API.md](../docs/ERROR_LOGS_API.md) |
 | Public contact-form intake | `/api/public/contact` | Auth DB — **no auth**, rate-limited, own CORS |
 | Health Check | `/api/admin/health` | Main DB + Citation DB |
 
@@ -616,6 +617,36 @@ Stamps `first_contacted_at` (earliest attempt), `last_contacted_at`, `last_conta
 ### `DELETE /api/admin/contact-enquiries/:id`
 
 Super-admin / static token only. Marketing admins get `403` — use status `spam` or `closed`.
+
+---
+
+## I) Error Logs (Platform)
+
+Every backend service (Python and Node) records the errors its users hit in **one shared table**:
+`public.error_logs` in **Document_DB** (the same database `DOCDB_URL` points at), owned by
+agentic-document-service. This backend reads, resolves and deletes those rows under
+`/api/admin/error-logs` (roles: `super-admin`, `admin`, or the static `ADMIN_TOKEN`).
+
+**Full reference with request bodies and captured responses for every endpoint:
+[docs/ERROR_LOGS_API.md](../docs/ERROR_LOGS_API.md).**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/admin/error-logs/stats` | KPIs, 14-day trend, breakdowns by service / category / source / severity / status, top issues, top endpoints, top users, latest unresolved |
+| GET | `/api/admin/error-logs/meta` | Filter vocabulary + values actually present + permissions |
+| GET | `/api/admin/error-logs` | Paginated list. Filters: `service`, `environment`, `source`, `category`, `severity`, `status_code`, `status_class`, `error_type`, `provider`, `user`, `user_id`, `user_email`, `request_id`, `fingerprint`, `endpoint`, `method`, `resolved`, `has_user`, `search`, `from`, `to`, `since_hours`, `sort` |
+| GET | `/api/admin/error-logs/export` | CSV of the same list (max 5000 rows, IST columns) |
+| GET | `/api/admin/error-logs/users` | Errors grouped per user, enriched from the Auth DB `users` table |
+| GET | `/api/admin/error-logs/issues` | Errors grouped per fingerprint |
+| GET | `/api/admin/error-logs/:id` | Full row: stack trace, payload, external API response, issue summary, related rows |
+| PATCH | `/api/admin/error-logs/:id/resolve` | `{ resolved, note? }` — resolve / reopen one row |
+| PATCH | `/api/admin/error-logs/resolve` | `{ ids[] | fingerprint, resolved, note? }` — resolve / reopen many |
+| DELETE | `/api/admin/error-logs/:id` | Delete one row |
+| POST | `/api/admin/error-logs/bulk-delete` | `{ ids[] | fingerprint }` — delete many |
+
+Everything a user hit: `GET /api/admin/error-logs?user=<user_id or email>`.
+All timestamps come as UTC ISO plus an `*_ist` object (same shape as section H).
+If the table does not exist yet the endpoints answer `503 ERROR_LOGS_TABLE_MISSING`.
 
 ---
 
