@@ -839,6 +839,174 @@ async function runTests() {
     }
 
     // ════════════════════════════════════════════════════════════════════════
+    // J) Activity & Error Logs (api_audit_logs) — /api/admin/audit-logs
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('\n── J) Activity & Error Logs (api_audit_logs) ──');
+    let auditRowId = null;
+    let auditFailedId = null;
+    let auditFailedErrorLogId = null;
+    let auditUserEmail = null;
+    let auditDefaultTotal = null;
+    {
+        const r = await request('GET', '/api/admin/audit-logs/summary');
+        const d = r.data?.data;
+        const pass = r.status === 200 && r.data?.success === true
+            && typeof d?.totals?.calls === 'number' && typeof d?.totals?.failed === 'number' && typeof d?.totals?.failure_rate_pct === 'number'
+            && Array.isArray(d?.per_service) && Array.isArray(d?.top_endpoints) && Array.isArray(d?.top_users)
+            && Array.isArray(d?.daily_trend) && d?.period && Boolean(d?.generated_at_ist?.display);
+        addResult({
+            name: 'Audit Logs Summary', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs/summary',
+            purpose: 'Per-service calls / failed / failure rate / avg + p50 + p95 duration, top 20 APIs, top 20 users, breakdowns, daily trend (default: last 7 days, pings excluded).',
+            inputs: 'Query: from, to, since_hours, user, service, status, exclude_pings …', curl: buildCurl('GET', '/api/admin/audit-logs/summary'),
+            expected: '200 + data.totals, per_service[], top_endpoints[], top_users[]',
+            actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/audit-logs/meta');
+        const d = r.data?.data;
+        const pass = r.status === 200 && Array.isArray(d?.used?.services) && Array.isArray(d?.vocab?.statuses) && d?.defaults?.exclude_pings === true;
+        addResult({
+            name: 'Audit Logs Meta', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs/meta',
+            purpose: 'Distinct services, resource types, actions, HTTP methods, error types for filter dropdowns + defaults/limits.',
+            inputs: 'Headers: Authorization', curl: buildCurl('GET', '/api/admin/audit-logs/meta'),
+            expected: '200 + data.used.services[], data.vocab', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { page: 1, page_size: 20 };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        const d = r.data?.data;
+        const rows = d?.rows || [];
+        const first = rows[0];
+        const pass = r.status === 200 && Array.isArray(d?.rows) && typeof d?.total === 'number' && d?.page_size === 20
+            && d?.filters?.exclude_pings === true
+            && rows.every(x => x.endpoint !== '/api/auth/activity/ping' && !Object.prototype.hasOwnProperty.call(x, 'stack_trace'))
+            && (!first || Boolean(first.id && first.created_at_ist?.display && first.status && first.service_name));
+        addResult({
+            name: 'Audit Logs List', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'Paginated API-call list (last 7 days by default, activity pings hidden, newest first). Never includes stack_trace.',
+            inputs: 'Query: page, page_size (+ filters)', curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '200 + data.rows[], data.total, no ping rows, no stack_trace', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+        if (pass && first) {
+            auditRowId = first.id;
+            auditDefaultTotal = d.total;
+            auditUserEmail = (rows.find(x => x.user_email) || {}).user_email || null;
+        }
+    }
+    {
+        const params = { exclude_pings: 'false', page_size: 100 };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        const d = r.data?.data;
+        const pass = r.status === 200 && d?.filters?.exclude_pings === false && (auditDefaultTotal === null || d.total >= auditDefaultTotal);
+        addResult({
+            name: 'Audit Logs List (pings included)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'exclude_pings=false brings /api/auth/activity/ping rows back; total must be >= the default total.',
+            inputs: 'Query: exclude_pings=false', curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '200 + total >= default total', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { status: 'FAILED', page_size: 50 };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        const rows = r.data?.data?.rows || [];
+        const pass = r.status === 200 && rows.every(x => x.status === 'FAILED' && x.failed === true) && r.data?.data?.filters?.status === 'FAILED';
+        addResult({
+            name: 'Audit Logs List (FAILED only)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'status=FAILED returns only failed calls; these carry error_type / user_message / error_log_id.',
+            inputs: 'Query: status=FAILED', curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '200 + every row status=FAILED', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+        if (pass && rows.length) {
+            const withLink = rows.find(x => x.error_log_id) || rows[0];
+            auditFailedId = withLink.id;
+            auditFailedErrorLogId = withLink.error_log_id || null;
+        }
+    }
+    if (auditUserEmail) {
+        const params = { user: auditUserEmail, page_size: 50 };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        const rows = r.data?.data?.rows || [];
+        const needle = auditUserEmail.toLowerCase();
+        const pass = r.status === 200 && rows.length > 0 && rows.every(x => String(x.user_email || '').toLowerCase().includes(needle) || x.user_id === auditUserEmail);
+        addResult({
+            name: 'Audit Logs List (user filter)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'user=<email or id> narrows to one platform user (ILIKE on email, exact on id, resolved through the Auth DB).',
+            inputs: `Query: user=${auditUserEmail}`, curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '200 + only that user\'s rows', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { status: 'NOPE', from: 'yesterday' };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        addResult({
+            name: 'Audit Logs List (INVALID — expect 400)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'status must be SUCCESS | FAILED; from/to must be YYYY-MM-DD or ISO date-time.',
+            inputs: 'Query: status=NOPE&from=yesterday', curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_ERROR',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { status: 'FAILED', exclude_pings: 'false' };
+        const r = await request('GET', '/api/admin/audit-logs/export', { params });
+        const body = typeof r.data === 'string' ? r.data : '';
+        const pass = r.status === 200 && body.includes('Timestamp (IST)') && body.includes('Status') && body.includes('Error type');
+        addResult({
+            name: 'Audit Logs CSV Export', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs/export',
+            purpose: 'CSV with the same filters as the list (UTF-8 BOM, IST columns), max 50 000 rows.',
+            inputs: 'Query: same as list', curl: buildCurl('GET', '/api/admin/audit-logs/export', {}, null, params),
+            expected: '200 text/csv with header row', actual: r.status, pass,
+            latency: r.latency, sample: body.slice(0, 600), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/audit-logs/not-a-uuid');
+        addResult({
+            name: 'Audit Log Detail (INVALID id — expect 400)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs/not-a-uuid',
+            purpose: 'Row ids are UUIDs.', inputs: 'Path: id', curl: buildCurl('GET', '/api/admin/audit-logs/not-a-uuid'),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const id = '00000000-0000-4000-8000-000000000000';
+        const r = await request('GET', `/api/admin/audit-logs/${id}`);
+        addResult({
+            name: 'Audit Log Detail (UNKNOWN id — expect 404)', group: 'Audit Logs', method: 'GET', path: `/api/admin/audit-logs/${id}`,
+            purpose: 'Unknown UUID returns NOT_FOUND.', inputs: 'Path: id', curl: buildCurl('GET', `/api/admin/audit-logs/${id}`),
+            expected: '404 NOT_FOUND', actual: r.status, pass: r.status === 404 && r.data?.error?.code === 'NOT_FOUND',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const id = auditFailedId || auditRowId;
+        if (id) {
+            const r = await request('GET', `/api/admin/audit-logs/${id}`);
+            const d = r.data?.data;
+            const linkOk = !auditFailedErrorLogId || id !== auditFailedId || (d?.error && d.error.id === auditFailedErrorLogId && Object.prototype.hasOwnProperty.call(d.error, 'stack_trace'));
+            const pass = r.status === 200 && d?.audit?.id === id
+                && Object.prototype.hasOwnProperty.call(d.audit, 'stack_trace')
+                && Object.prototype.hasOwnProperty.call(d, 'error') && Array.isArray(d?.errors) && linkOk;
+            addResult({
+                name: 'Audit Log Detail', group: 'Audit Logs', method: 'GET', path: `/api/admin/audit-logs/${id}`,
+                purpose: 'Full row incl. stack_trace and payload, plus the linked error_logs row(s) (error_log_id / payload.error_log_ids) with their stack traces.',
+                inputs: 'Path: id (UUID)', curl: buildCurl('GET', `/api/admin/audit-logs/${id}`),
+                expected: '200 + data.audit (with stack_trace), data.error (linked error_logs row or null), data.errors[]', actual: r.status, pass,
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        } else {
+            console.log('  ⚠️  No api_audit_logs rows in the last 7 days — skipping detail test');
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
     // G) Authentication Negative Tests
     // ════════════════════════════════════════════════════════════════════════
     console.log('\n── G) Auth Negative Tests ──');

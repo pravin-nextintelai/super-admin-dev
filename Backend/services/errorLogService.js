@@ -915,6 +915,9 @@ async function deleteLogs(docPool, target) {
 }
 
 module.exports = {
+  // SQL fragments reused by auditLogService (same `e` alias)
+  DERIVED_COLUMNS,
+  OCCURRENCE_SQL,
   // vocab
   SOURCES,
   SOURCE_LABELS,

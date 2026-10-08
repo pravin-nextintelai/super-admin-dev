@@ -1,6 +1,6 @@
 # Admin Dashboard API — Test Report
 
-**Generated:** 2026-10-08T11:18:09.912Z  
+**Generated:** 2026-10-08T12:00:00.627Z  
 **Base URL:** `http://localhost:4010`  
 **Admin Token:** `[REDACTED]`  
 
@@ -10,10 +10,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Total Tests | 53 |
-| ✅ Passed | 39 |
+| Total Tests | 64 |
+| ✅ Passed | 50 |
 | ❌ Failed | 14 |
-| Avg Latency | 52ms |
+| Avg Latency | 65ms |
 
 ### All Tests
 
@@ -21,57 +21,68 @@
 |---|--------|----------|----------|--------|--------|--------|
 | 1 | GET | `/api/admin/overview` | 200 + { success: true, data: { total_judgments, ... } } | 404 | ❌ FAIL | 3ms |
 | 2 | GET | `/api/admin/hitl` | 200 + data.tasks array | 404 | ❌ FAIL | 2ms |
-| 3 | GET | `/api/admin/hitl/00000000-0000-0000-0000-000000000000` | 404 | 404 | ✅ PASS | 1ms |
+| 3 | GET | `/api/admin/hitl/00000000-0000-0000-0000-000000000000` | 404 | 404 | ✅ PASS | 2ms |
 | 4 | POST | `/api/admin/hitl/1/action` | 400 | 404 | ❌ FAIL | 2ms |
-| 5 | GET | `/api/admin/pipeline/summary` | 200 + object | 404 | ❌ FAIL | 2ms |
-| 6 | GET | `/api/admin/pipeline/items` | 200 + paginated list | 404 | ❌ FAIL | 2ms |
+| 5 | GET | `/api/admin/pipeline/summary` | 200 + object | 404 | ❌ FAIL | 1ms |
+| 6 | GET | `/api/admin/pipeline/items` | 200 + paginated list | 404 | ❌ FAIL | 1ms |
 | 7 | GET | `/api/admin/pipeline/errors` | 200 | 404 | ❌ FAIL | 1ms |
 | 8 | GET | `/api/admin/routesdb/summary` | 200 | 404 | ❌ FAIL | 2ms |
-| 9 | GET | `/api/admin/routesdb/top-cited` | 200 + array | 404 | ❌ FAIL | 2ms |
+| 9 | GET | `/api/admin/routesdb/top-cited` | 200 + array | 404 | ❌ FAIL | 1ms |
 | 10 | GET | `/api/admin/routesdb/courts-breakdown` | 200 | 404 | ❌ FAIL | 2ms |
 | 11 | GET | `/api/admin/business/summary` | 200 | 404 | ❌ FAIL | 1ms |
 | 12 | GET | `/api/admin/business/reports-per-day` | 200 + array | 404 | ❌ FAIL | 1ms |
 | 13 | GET | `/api/admin/business/top-users` | 200 + array | 404 | ❌ FAIL | 1ms |
-| 14 | GET | `/api/admin/users` | 200 + data.users array | 200 | ✅ PASS | 67ms |
-| 15 | GET | `/api/admin/users/pending` | 200 | 200 | ✅ PASS | 33ms |
-| 16 | GET | `/api/admin/users/stats` | 200 | 200 | ✅ PASS | 35ms |
-| 17 | POST | `/api/admin/users/56/approve` | 200 | 200 | ✅ PASS | 34ms |
-| 18 | POST | `/api/admin/users/56/block` | 200 | 200 | ✅ PASS | 36ms |
-| 19 | POST | `/api/admin/users/56/unblock` | 200 | 200 | ✅ PASS | 34ms |
-| 20 | POST | `/api/public/contact` | 201 + data.reference_no + data.submitted_at_ist | 201 | ✅ PASS | 226ms |
-| 21 | GET | `/api/admin/contact-enquiries/stats` | 200 + data.totals | 200 | ✅ PASS | 38ms |
-| 22 | GET | `/api/admin/contact-enquiries/meta` | 200 + data.statuses | 200 | ✅ PASS | 33ms |
-| 23 | GET | `/api/admin/contact-enquiries` | 200 + data.enquiries[] | 200 | ✅ PASS | 68ms |
-| 24 | GET | `/api/admin/contact-enquiries/23` | 200 + data.enquiry + data.activities | 200 | ✅ PASS | 67ms |
-| 25 | POST | `/api/admin/contact-enquiries/23/contact-log` | 200 + enquiry.first_contacted_at_ist | 200 | ✅ PASS | 196ms |
-| 26 | PATCH | `/api/admin/contact-enquiries/23` | 200 + enquiry.status = closed | 200 | ✅ PASS | 227ms |
-| 27 | GET | `/api/admin/contact-enquiries/export` | 200 text/csv | 200 | ✅ PASS | 66ms |
-| 28 | DELETE | `/api/admin/contact-enquiries/23` | 200 | 200 | ✅ PASS | 35ms |
-| 29 | GET | `/api/admin/error-logs/stats` | 200 + data.totals, daily_trend[], by_service[], top_issues[], top_users[] | 200 | ✅ PASS | 127ms |
+| 14 | GET | `/api/admin/users` | 200 + data.users array | 200 | ✅ PASS | 65ms |
+| 15 | GET | `/api/admin/users/pending` | 200 | 200 | ✅ PASS | 38ms |
+| 16 | GET | `/api/admin/users/stats` | 200 | 200 | ✅ PASS | 34ms |
+| 17 | POST | `/api/admin/users/52/approve` | 200 | 200 | ✅ PASS | 36ms |
+| 18 | POST | `/api/admin/users/52/block` | 200 | 200 | ✅ PASS | 37ms |
+| 19 | POST | `/api/admin/users/52/unblock` | 200 | 200 | ✅ PASS | 36ms |
+| 20 | POST | `/api/public/contact` | 201 + data.reference_no + data.submitted_at_ist | 201 | ✅ PASS | 224ms |
+| 21 | GET | `/api/admin/contact-enquiries/stats` | 200 + data.totals | 200 | ✅ PASS | 37ms |
+| 22 | GET | `/api/admin/contact-enquiries/meta` | 200 + data.statuses | 200 | ✅ PASS | 36ms |
+| 23 | GET | `/api/admin/contact-enquiries` | 200 + data.enquiries[] | 200 | ✅ PASS | 70ms |
+| 24 | GET | `/api/admin/contact-enquiries/25` | 200 + data.enquiry + data.activities | 200 | ✅ PASS | 70ms |
+| 25 | POST | `/api/admin/contact-enquiries/25/contact-log` | 200 + enquiry.first_contacted_at_ist | 200 | ✅ PASS | 514ms |
+| 26 | PATCH | `/api/admin/contact-enquiries/25` | 200 + enquiry.status = closed | 200 | ✅ PASS | 229ms |
+| 27 | GET | `/api/admin/contact-enquiries/export` | 200 text/csv | 200 | ✅ PASS | 69ms |
+| 28 | DELETE | `/api/admin/contact-enquiries/25` | 200 | 200 | ✅ PASS | 34ms |
+| 29 | GET | `/api/admin/error-logs/stats` | 200 + data.totals, daily_trend[], by_service[], top_issues[], top_users[] | 200 | ✅ PASS | 130ms |
 | 30 | GET | `/api/admin/error-logs/meta` | 200 + data.vocab, data.used.services[], data.permissions | 200 | ✅ PASS | 36ms |
-| 31 | GET | `/api/admin/error-logs` | 200 + data.logs[], data.pagination | 200 | ✅ PASS | 67ms |
-| 32 | GET | `/api/admin/error-logs` | 200 + only rows for that service | 200 | ✅ PASS | 134ms |
-| 33 | GET | `/api/admin/error-logs` | 200 + every row is_resolved=false | 200 | ✅ PASS | 139ms |
-| 34 | GET | `/api/admin/error-logs` | 200 + every row origin=browser with client{} | 200 | ✅ PASS | 104ms |
-| 35 | GET | `/api/admin/error-logs` | 200 + no row with is_debug=true + total = stats.total - stats.debug | 200 | ✅ PASS | 131ms |
-| 36 | GET | `/api/admin/error-logs` | 200 + logs=[] total=0 | 200 | ✅ PASS | 67ms |
+| 31 | GET | `/api/admin/error-logs` | 200 + data.logs[], data.pagination | 200 | ✅ PASS | 99ms |
+| 32 | GET | `/api/admin/error-logs` | 200 + only rows for that service | 200 | ✅ PASS | 104ms |
+| 33 | GET | `/api/admin/error-logs` | 200 + every row is_resolved=false | 200 | ✅ PASS | 112ms |
+| 34 | GET | `/api/admin/error-logs` | 200 + every row origin=browser with client{} | 200 | ✅ PASS | 107ms |
+| 35 | GET | `/api/admin/error-logs` | 200 + no row with is_debug=true + total = stats.total - stats.debug | 200 | ✅ PASS | 199ms |
+| 36 | GET | `/api/admin/error-logs` | 200 + logs=[] total=0 | 200 | ✅ PASS | 70ms |
 | 37 | GET | `/api/admin/error-logs` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 2ms |
-| 38 | GET | `/api/admin/error-logs` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 1ms |
-| 39 | GET | `/api/admin/error-logs/users` | 200 + data.users[], data.pagination | 200 | ✅ PASS | 95ms |
-| 40 | GET | `/api/admin/error-logs/issues` | 200 + data.issues[] | 200 | ✅ PASS | 36ms |
-| 41 | GET | `/api/admin/error-logs/export` | 200 text/csv with header row | 200 | ✅ PASS | 160ms |
-| 42 | GET | `/api/admin/error-logs/not-a-uuid` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 1ms |
-| 43 | GET | `/api/admin/error-logs/00000000-0000-4000-8000-000000000000` | 404 NOT_FOUND | 404 | ✅ PASS | 33ms |
-| 44 | GET | `/api/admin/error-logs/bd630875-447e-4cc6-8c56-8d5c484eefa9` | 200 + data.log (with stack_trace, payload, origin), data.issue, data.audit, data.related | 200 | ✅ PASS | 100ms |
-| 45 | PATCH | `/api/admin/error-logs/bd630875-447e-4cc6-8c56-8d5c484eefa9/resolve` | 200 + data.log.is_resolved=true | 200 | ✅ PASS | 103ms |
-| 46 | PATCH | `/api/admin/error-logs/bd630875-447e-4cc6-8c56-8d5c484eefa9/resolve` | 200 + data.log.is_resolved=false | 200 | ✅ PASS | 104ms |
+| 38 | GET | `/api/admin/error-logs` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 2ms |
+| 39 | GET | `/api/admin/error-logs/users` | 200 + data.users[], data.pagination | 200 | ✅ PASS | 100ms |
+| 40 | GET | `/api/admin/error-logs/issues` | 200 + data.issues[] | 200 | ✅ PASS | 35ms |
+| 41 | GET | `/api/admin/error-logs/export` | 200 text/csv with header row | 200 | ✅ PASS | 140ms |
+| 42 | GET | `/api/admin/error-logs/not-a-uuid` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 2ms |
+| 43 | GET | `/api/admin/error-logs/00000000-0000-4000-8000-000000000000` | 404 NOT_FOUND | 404 | ✅ PASS | 35ms |
+| 44 | GET | `/api/admin/error-logs/d7e5f33d-5f89-487e-be54-25d548963481` | 200 + data.log (with stack_trace, payload, origin), data.issue, data.audit, data.related | 200 | ✅ PASS | 133ms |
+| 45 | PATCH | `/api/admin/error-logs/d7e5f33d-5f89-487e-be54-25d548963481/resolve` | 200 + data.log.is_resolved=true | 200 | ✅ PASS | 142ms |
+| 46 | PATCH | `/api/admin/error-logs/d7e5f33d-5f89-487e-be54-25d548963481/resolve` | 200 + data.log.is_resolved=false | 200 | ✅ PASS | 138ms |
 | 47 | PATCH | `/api/admin/error-logs/resolve` | 200 + data.changed=1 | 200 | ✅ PASS | 37ms |
 | 48 | PATCH | `/api/admin/error-logs/resolve` | 200 + data.changed>=1 | 200 | ✅ PASS | 37ms |
-| 49 | PATCH | `/api/admin/error-logs/resolve` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 2ms |
-| 50 | POST | `/api/admin/error-logs/bulk-delete` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 2ms |
-| 51 | DELETE | `/api/admin/error-logs/00000000-0000-4000-8000-000000000000` | 404 NOT_FOUND | 404 | ✅ PASS | 34ms |
-| 52 | GET | `/api/admin/overview` | 401 | 404 | ❌ FAIL | 2ms |
-| 53 | GET | `/api/admin/overview` | 403 | 404 | ❌ FAIL | 1ms |
+| 49 | PATCH | `/api/admin/error-logs/resolve` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 4ms |
+| 50 | POST | `/api/admin/error-logs/bulk-delete` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 3ms |
+| 51 | DELETE | `/api/admin/error-logs/00000000-0000-4000-8000-000000000000` | 404 NOT_FOUND | 404 | ✅ PASS | 36ms |
+| 52 | GET | `/api/admin/audit-logs/summary` | 200 + data.totals, per_service[], top_endpoints[], top_users[] | 200 | ✅ PASS | 76ms |
+| 53 | GET | `/api/admin/audit-logs/meta` | 200 + data.used.services[], data.vocab | 200 | ✅ PASS | 35ms |
+| 54 | GET | `/api/admin/audit-logs` | 200 + data.rows[], data.total, no ping rows, no stack_trace | 200 | ✅ PASS | 107ms |
+| 55 | GET | `/api/admin/audit-logs` | 200 + total >= default total | 200 | ✅ PASS | 148ms |
+| 56 | GET | `/api/admin/audit-logs` | 200 + every row status=FAILED | 200 | ✅ PASS | 109ms |
+| 57 | GET | `/api/admin/audit-logs` | 200 + only that user's rows | 200 | ✅ PASS | 153ms |
+| 58 | GET | `/api/admin/audit-logs` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 2ms |
+| 59 | GET | `/api/admin/audit-logs/export` | 200 text/csv with header row | 200 | ✅ PASS | 114ms |
+| 60 | GET | `/api/admin/audit-logs/not-a-uuid` | 400 VALIDATION_ERROR | 400 | ✅ PASS | 2ms |
+| 61 | GET | `/api/admin/audit-logs/00000000-0000-4000-8000-000000000000` | 404 NOT_FOUND | 404 | ✅ PASS | 38ms |
+| 62 | GET | `/api/admin/audit-logs/04ed84e7-ddf2-4660-88e7-36a379932efc` | 200 + data.audit (with stack_trace), data.error (linked error_logs row or null), data.errors[] | 200 | ✅ PASS | 114ms |
+| 63 | GET | `/api/admin/overview` | 401 | 404 | ❌ FAIL | 2ms |
+| 64 | GET | `/api/admin/overview` | 403 | 404 | ❌ FAIL | 1ms |
 
 ---
 
@@ -136,7 +147,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/hitl/00000000-0000-0000-0000-000000000000"
 ```
 
-**Test Result:** ✅ PASS — Status: `404` — Latency: `1ms`
+**Test Result:** ✅ PASS — Status: `404` — Latency: `2ms`
 
 <details><summary>Response sample</summary>
 
@@ -184,7 +195,7 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/pipeline/summary"
 ```
 
-**Test Result:** ❌ FAIL — Status: `404` — Latency: `2ms`
+**Test Result:** ❌ FAIL — Status: `404` — Latency: `1ms`
 
 <details><summary>Response sample</summary>
 
@@ -206,7 +217,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/pipeline/items?status=FAILED&hasError=true&page=1&pageSize=5"
 ```
 
-**Test Result:** ❌ FAIL — Status: `404` — Latency: `2ms`
+**Test Result:** ❌ FAIL — Status: `404` — Latency: `1ms`
 
 <details><summary>Response sample</summary>
 
@@ -276,7 +287,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/routesdb/top-cited?limit=5"
 ```
 
-**Test Result:** ❌ FAIL — Status: `404` — Latency: `2ms`
+**Test Result:** ❌ FAIL — Status: `404` — Latency: `1ms`
 
 <details><summary>Response sample</summary>
 
@@ -394,7 +405,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/users?page=1&pageSize=5"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `67ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `65ms`
 
 <details><summary>Response sample</summary>
 
@@ -484,7 +495,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/users/pending"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `33ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `38ms`
 
 <details><summary>Response sample</summary>
 
@@ -493,30 +504,6 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "success": true,
   "data": {
     "users": [
-      {
-        "id": 56,
-        "email": "f.r.ed.a.i.zs.889@gmail.com",
-        "username": "Demo Advocate Firms pvt ltd",
-        "role": "user",
-        "account_type": "FIRM_ADMIN",
-        "approval_status": "PENDING",
-        "is_active": false,
-        "created_at": "2026-04-02T00:40:02.108Z",
-        "phone": "7878787852",
-        "location": "Chh. Sambhajinagar, Maharashtra"
-      },
-      {
-        "id": 55,
-        "email": "morasa3813@marvetos.com",
-        "username": "Demo Advocate Firms pvt ltd",
-        "role": "user",
-        "account_type": "FIRM_ADMIN",
-        "approval_status": "PENDING",
-        "is_active": false,
-        "created_at": "2026-04-02T00:39:05.423Z",
-        "phone": "7878787852",
-        "location": "Chh. Sambhajinagar, Maharashtra"
-      },
       {
         "id": 52,
         "email": "sarule@nexintelai.com",
@@ -559,7 +546,33 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
         "username": "Rutuja",
         "role": "user",
         "account_type": "FIRM_ADMIN",
-        
+        "approval_status": "PENDING",
+        "is_active": false,
+        "created_at": "2026-01-06T05:30:18.079Z",
+        "phone": "+914345456567",
+        "location": "vcdv, vfcxvfc"
+      },
+      {
+        "id": 11,
+        "email": "vishal.bainade@nexintelai.com",
+        "username": "Vishal Bainade",
+        "role": "user",
+        "account_type": "FIRM_ADMIN",
+        "approval_status": "PENDING",
+        "is_active": false,
+        "created_at": "2026-01-06T05:13:26.206Z",
+        "phone": "+917418529633",
+        "location": "A.Bad, Maharashtra"
+      },
+      {
+        "id": 9,
+        "email": "firm@example.com",
+        "username": "Test",
+        "role": "user",
+        "account_type": "FIRM_ADMIN",
+        "approval_status": "PENDING",
+        "is_active": false,
+        "
 ... (truncated)
 ```
 </details>
@@ -575,7 +588,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/users/stats"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `35ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `34ms`
 
 <details><summary>Response sample</summary>
 
@@ -584,9 +597,9 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "success": true,
   "data": {
     "total_users": 67,
-    "active_users": 57,
+    "active_users": 59,
     "blocked_users": 1,
-    "pending_approvals": 8,
+    "pending_approvals": 6,
     "firm_admin_count": 26,
     "firm_user_count": 5,
     "solo_users": 31
@@ -603,10 +616,10 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 
 **Example curl:**
 ```bash
-curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/users/56/approve"
+curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/users/52/approve"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `34ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `36ms`
 
 <details><summary>Response sample</summary>
 
@@ -615,21 +628,21 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
   "success": true,
   "data": {
     "user": {
-      "id": 56,
-      "email": "f.r.ed.a.i.zs.889@gmail.com",
-      "username": "Demo Advocate Firms pvt ltd",
-      "password": "$2b$10$8GqPrHli/NPeqS7Ps0zuQ.91qMtOOLs7S1NWfcOygSl67llt2W4va",
+      "id": 52,
+      "email": "sarule@nexintelai.com",
+      "username": "Pravin Sarule",
+      "password": "$2b$10$nuOLMZyNMzZwC52JUGvSge70zxwiEbYoLLkE9Vo0MEEeyxKhDdOUK",
       "google_uid": null,
       "auth_type": "manual",
       "profile_image": null,
       "firebase_uid": null,
       "role": "user",
       "is_blocked": false,
-      "created_at": "2026-04-02T00:40:02.108Z",
-      "updated_at": "2026-04-02T00:40:02.108Z",
+      "created_at": "2026-03-31T03:38:49.124Z",
+      "updated_at": "2026-03-31T03:38:49.124Z",
       "razorpay_customer_id": null,
-      "phone": "7878787852",
-      "location": "Chh. Sambhajinagar, Maharashtra",
+      "phone": "7499303475",
+      "location": "teset, teset",
       "google_drive_refresh_token": null,
       "google_drive_token_expiry": null,
       "account_type": "FIRM_ADMIN",
@@ -658,10 +671,10 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
 
 **Example curl:**
 ```bash
-curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/users/56/block"
+curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/users/52/block"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `36ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `37ms`
 
 <details><summary>Response sample</summary>
 
@@ -670,21 +683,21 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
   "success": true,
   "data": {
     "user": {
-      "id": 56,
-      "email": "f.r.ed.a.i.zs.889@gmail.com",
-      "username": "Demo Advocate Firms pvt ltd",
-      "password": "$2b$10$8GqPrHli/NPeqS7Ps0zuQ.91qMtOOLs7S1NWfcOygSl67llt2W4va",
+      "id": 52,
+      "email": "sarule@nexintelai.com",
+      "username": "Pravin Sarule",
+      "password": "$2b$10$nuOLMZyNMzZwC52JUGvSge70zxwiEbYoLLkE9Vo0MEEeyxKhDdOUK",
       "google_uid": null,
       "auth_type": "manual",
       "profile_image": null,
       "firebase_uid": null,
       "role": "user",
       "is_blocked": true,
-      "created_at": "2026-04-02T00:40:02.108Z",
-      "updated_at": "2026-04-02T00:40:02.108Z",
+      "created_at": "2026-03-31T03:38:49.124Z",
+      "updated_at": "2026-03-31T03:38:49.124Z",
       "razorpay_customer_id": null,
-      "phone": "7878787852",
-      "location": "Chh. Sambhajinagar, Maharashtra",
+      "phone": "7499303475",
+      "location": "teset, teset",
       "google_drive_refresh_token": null,
       "google_drive_token_expiry": null,
       "account_type": "FIRM_ADMIN",
@@ -713,10 +726,10 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
 
 **Example curl:**
 ```bash
-curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/users/56/unblock"
+curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/users/52/unblock"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `34ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `36ms`
 
 <details><summary>Response sample</summary>
 
@@ -725,21 +738,21 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
   "success": true,
   "data": {
     "user": {
-      "id": 56,
-      "email": "f.r.ed.a.i.zs.889@gmail.com",
-      "username": "Demo Advocate Firms pvt ltd",
-      "password": "$2b$10$8GqPrHli/NPeqS7Ps0zuQ.91qMtOOLs7S1NWfcOygSl67llt2W4va",
+      "id": 52,
+      "email": "sarule@nexintelai.com",
+      "username": "Pravin Sarule",
+      "password": "$2b$10$nuOLMZyNMzZwC52JUGvSge70zxwiEbYoLLkE9Vo0MEEeyxKhDdOUK",
       "google_uid": null,
       "auth_type": "manual",
       "profile_image": null,
       "firebase_uid": null,
       "role": "user",
       "is_blocked": false,
-      "created_at": "2026-04-02T00:40:02.108Z",
-      "updated_at": "2026-04-02T00:40:02.108Z",
+      "created_at": "2026-03-31T03:38:49.124Z",
+      "updated_at": "2026-03-31T03:38:49.124Z",
       "razorpay_customer_id": null,
-      "phone": "7878787852",
-      "location": "Chh. Sambhajinagar, Maharashtra",
+      "phone": "7499303475",
+      "location": "teset, teset",
       "google_drive_refresh_token": null,
       "google_drive_token_expiry": null,
       "account_type": "FIRM_ADMIN",
@@ -772,10 +785,10 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
 
 **Example curl:**
 ```bash
-curl -s -X POST -H "Content-Type: application/json" -d '{"name":"API","surname":"Test","email":"api.test+1791458287075@example.com","mobile":"+91 90000 00000","organisationName":"Automated Test","whatIsThisAbout":"Pricing & plans","additionalDetails":"automated test 1791458287075","consent":true,"pageUrl":"https://jurinex.ai/contact"}' "http://localhost:4010/api/public/contact"
+curl -s -X POST -H "Content-Type: application/json" -d '{"name":"API","surname":"Test","email":"api.test+1791460796357@example.com","mobile":"+91 90000 00000","organisationName":"Automated Test","whatIsThisAbout":"Pricing & plans","additionalDetails":"automated test 1791460796357","consent":true,"pageUrl":"https://jurinex.ai/contact"}' "http://localhost:4010/api/public/contact"
 ```
 
-**Test Result:** ✅ PASS — Status: `201` — Latency: `226ms`
+**Test Result:** ✅ PASS — Status: `201` — Latency: `224ms`
 
 <details><summary>Response sample</summary>
 
@@ -783,20 +796,20 @@ curl -s -X POST -H "Content-Type: application/json" -d '{"name":"API","surname":
 {
   "success": true,
   "data": {
-    "id": 23,
-    "reference_no": "CE-20261008-00023",
+    "id": 25,
+    "reference_no": "CE-20261008-00025",
     "duplicate": false,
-    "submitted_at": "2026-10-08T11:17:50.592Z",
+    "submitted_at": "2026-10-08T11:59:39.851Z",
     "submitted_at_ist": {
-      "iso": "2026-10-08T16:47:50+05:30",
+      "iso": "2026-10-08T17:29:39+05:30",
       "date": "08 Oct 2026",
-      "time": "04:47 PM",
-      "time24": "16:47",
+      "time": "05:29 PM",
+      "time24": "17:29",
       "weekday": "Thu",
-      "display": "Thu, 08 Oct 2026, 04:47 PM IST",
+      "display": "Thu, 08 Oct 2026, 05:29 PM IST",
       "timezone": "Asia/Kolkata",
-      "utc": "2026-10-08T11:17:50.592Z",
-      "epoch_ms": 1791458270592
+      "utc": "2026-10-08T11:59:39.851Z",
+      "epoch_ms": 1791460779851
     },
     "message": "Thank you, API. A member of the Jurinex team will reply within one working day."
   }
@@ -815,7 +828,7 @@ curl -s -X POST -H "Content-Type: application/json" -d '{"name":"API","surname":
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/stats"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `38ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `37ms`
 
 <details><summary>Response sample</summary>
 
@@ -824,17 +837,17 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "success": true,
   "data": {
     "timezone": "Asia/Kolkata",
-    "generated_at": "2026-10-08T11:18:07.302Z",
+    "generated_at": "2026-10-08T11:59:56.584Z",
     "generated_at_ist": {
-      "iso": "2026-10-08T16:48:07+05:30",
+      "iso": "2026-10-08T17:29:56+05:30",
       "date": "08 Oct 2026",
-      "time": "04:48 PM",
-      "time24": "16:48",
+      "time": "05:29 PM",
+      "time24": "17:29",
       "weekday": "Thu",
-      "display": "Thu, 08 Oct 2026, 04:48 PM IST",
+      "display": "Thu, 08 Oct 2026, 05:29 PM IST",
       "timezone": "Asia/Kolkata",
-      "utc": "2026-10-08T11:18:07.302Z",
-      "epoch_ms": 1791458287302
+      "utc": "2026-10-08T11:59:56.584Z",
+      "epoch_ms": 1791460796584
     },
     "totals": {
       "total": 4,
@@ -929,7 +942,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/meta"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `33ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `36ms`
 
 <details><summary>Response sample</summary>
 
@@ -1062,7 +1075,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries?status=open&sort=awaiting_longest&page=1&limit=5"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `68ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `70ms`
 
 <details><summary>Response sample</summary>
 
@@ -1107,7 +1120,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
           "utc": "2026-09-11T06:45:54.004Z",
           "epoch_ms": 1789109154004
         },
-        "submitted_ago": "27d 4h",
+        "submitted_ago": "27d 5h",
         "status": "new",
         "status_label": "New",
         "priority": "normal",
@@ -1125,7 +1138,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
         "first_response_minutes": null,
         "first_response_time": null,
         "awaiting_first_contact": true,
-        "awaiting_for": "27d 4h",
+        "awaiting_for": "27d 5h",
         "status_changed_at": "2026-09-11T06:45:54.004Z",
     
 ... (truncated)
@@ -1140,10 +1153,10 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 
 **Example curl:**
 ```bash
-curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/23"
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/25"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `67ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `70ms`
 
 <details><summary>Response sample</summary>
 
@@ -1152,40 +1165,40 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "success": true,
   "data": {
     "enquiry": {
-      "id": 23,
-      "reference_no": "CE-20261008-00023",
+      "id": 25,
+      "reference_no": "CE-20261008-00025",
       "first_name": "API",
       "last_name": "Test",
       "full_name": "API Test",
-      "email": "api.test+1791458287075@example.com",
+      "email": "api.test+1791460796357@example.com",
       "mobile_number": "+91 90000 00000",
       "organisation_name": "Automated Test",
       "topic": "Pricing & plans",
-      "message": "automated test 1791458287075",
+      "message": "automated test 1791460796357",
       "marketing_consent": true,
-      "consent_given_at": "2026-10-08T11:17:50.592Z",
+      "consent_given_at": "2026-10-08T11:59:39.851Z",
       "consent_given_at_ist": {
-        "iso": "2026-10-08T16:47:50+05:30",
+        "iso": "2026-10-08T17:29:39+05:30",
         "date": "08 Oct 2026",
-        "time": "04:47 PM",
-        "time24": "16:47",
+        "time": "05:29 PM",
+        "time24": "17:29",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:47 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:29 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T11:17:50.592Z",
-        "epoch_ms": 1791458270592
+        "utc": "2026-10-08T11:59:39.851Z",
+        "epoch_ms": 1791460779851
       },
-      "submitted_at": "2026-10-08T11:17:50.592Z",
+      "submitted_at": "2026-10-08T11:59:39.851Z",
       "submitted_at_ist": {
-        "iso": "2026-10-08T16:47:50+05:30",
+        "iso": "2026-10-08T17:29:39+05:30",
         "date": "08 Oct 2026",
-        "time": "04:47 PM",
-        "time24": "16:47",
+        "time": "05:29 PM",
+        "time24": "17:29",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:47 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:29 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T11:17:50.592Z",
-        "epoch_ms": 1791458270592
+        "utc": "2026-10-08T11:59:39.851Z",
+        "epoch_ms": 1791460779851
       },
       "submitted_ago": "just now",
       "status": "new",
@@ -1223,10 +1236,10 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 
 **Example curl:**
 ```bash
-curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/23/contact-log" -H "Content-Type: application/json" -d '{"channel":"call","outcome":"connected","note":"automated test call"}'
+curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/25/contact-log" -H "Content-Type: application/json" -d '{"channel":"call","outcome":"connected","note":"automated test call"}'
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `196ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `514ms`
 
 <details><summary>Response sample</summary>
 
@@ -1235,40 +1248,40 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
   "success": true,
   "data": {
     "enquiry": {
-      "id": 23,
-      "reference_no": "CE-20261008-00023",
+      "id": 25,
+      "reference_no": "CE-20261008-00025",
       "first_name": "API",
       "last_name": "Test",
       "full_name": "API Test",
-      "email": "api.test+1791458287075@example.com",
+      "email": "api.test+1791460796357@example.com",
       "mobile_number": "+91 90000 00000",
       "organisation_name": "Automated Test",
       "topic": "Pricing & plans",
-      "message": "automated test 1791458287075",
+      "message": "automated test 1791460796357",
       "marketing_consent": true,
-      "consent_given_at": "2026-10-08T11:17:50.592Z",
+      "consent_given_at": "2026-10-08T11:59:39.851Z",
       "consent_given_at_ist": {
-        "iso": "2026-10-08T16:47:50+05:30",
+        "iso": "2026-10-08T17:29:39+05:30",
         "date": "08 Oct 2026",
-        "time": "04:47 PM",
-        "time24": "16:47",
+        "time": "05:29 PM",
+        "time24": "17:29",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:47 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:29 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T11:17:50.592Z",
-        "epoch_ms": 1791458270592
+        "utc": "2026-10-08T11:59:39.851Z",
+        "epoch_ms": 1791460779851
       },
-      "submitted_at": "2026-10-08T11:17:50.592Z",
+      "submitted_at": "2026-10-08T11:59:39.851Z",
       "submitted_at_ist": {
-        "iso": "2026-10-08T16:47:50+05:30",
+        "iso": "2026-10-08T17:29:39+05:30",
         "date": "08 Oct 2026",
-        "time": "04:47 PM",
-        "time24": "16:47",
+        "time": "05:29 PM",
+        "time24": "17:29",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:47 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:29 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T11:17:50.592Z",
-        "epoch_ms": 1791458270592
+        "utc": "2026-10-08T11:59:39.851Z",
+        "epoch_ms": 1791460779851
       },
       "submitted_ago": "just now",
       "status": "contacted",
@@ -1276,22 +1289,22 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
       "priority": "normal",
       "priority_label": "Normal",
       "assigned_to": null,
-      "first_contacted_at": "2026-10-08T11:18:07.571Z",
+      "first_contacted_at": "2026-10-08T11:59:56.861Z",
       "first_contacted_at_ist": {
-        "iso": "2026-10-08T16:48:07+05:30",
+        "iso": "2026-10-08T17:29:56+05:30",
         "date": "08 Oct 2026",
-        "time": "04:48 PM",
-        "time24": "16:48",
+        "time": "05:29 PM",
+        "time24": "17:29",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:48 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:29 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T11:18:07.571Z",
-        "epoch_ms": 1791458287571
+        "utc": "2026-10-08T11:59:56.861Z",
+        "epoch_ms": 1791460796861
       },
       "first_contacted_by": null,
-      "last_contacted_at": "2026-10-08T11:18:07.571Z",
+      "last_contacted_at": "2026-10-08T11:59:56.861Z",
       "last_contacted_at_ist": {
-        "iso": "2026-10-08T16:48:07+05:30
+        "iso": "2026-10-08T17:29:56+05:30
 ... (truncated)
 ```
 </details>
@@ -1304,10 +1317,10 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
 
 **Example curl:**
 ```bash
-curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/23" -H "Content-Type: application/json" -d '{"status":"closed","priority":"low","note":"automated test close"}'
+curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/25" -H "Content-Type: application/json" -d '{"status":"closed","priority":"low","note":"automated test close"}'
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `227ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `229ms`
 
 <details><summary>Response sample</summary>
 
@@ -1316,40 +1329,40 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
   "success": true,
   "data": {
     "enquiry": {
-      "id": 23,
-      "reference_no": "CE-20261008-00023",
+      "id": 25,
+      "reference_no": "CE-20261008-00025",
       "first_name": "API",
       "last_name": "Test",
       "full_name": "API Test",
-      "email": "api.test+1791458287075@example.com",
+      "email": "api.test+1791460796357@example.com",
       "mobile_number": "+91 90000 00000",
       "organisation_name": "Automated Test",
       "topic": "Pricing & plans",
-      "message": "automated test 1791458287075",
+      "message": "automated test 1791460796357",
       "marketing_consent": true,
-      "consent_given_at": "2026-10-08T11:17:50.592Z",
+      "consent_given_at": "2026-10-08T11:59:39.851Z",
       "consent_given_at_ist": {
-        "iso": "2026-10-08T16:47:50+05:30",
+        "iso": "2026-10-08T17:29:39+05:30",
         "date": "08 Oct 2026",
-        "time": "04:47 PM",
-        "time24": "16:47",
+        "time": "05:29 PM",
+        "time24": "17:29",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:47 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:29 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T11:17:50.592Z",
-        "epoch_ms": 1791458270592
+        "utc": "2026-10-08T11:59:39.851Z",
+        "epoch_ms": 1791460779851
       },
-      "submitted_at": "2026-10-08T11:17:50.592Z",
+      "submitted_at": "2026-10-08T11:59:39.851Z",
       "submitted_at_ist": {
-        "iso": "2026-10-08T16:47:50+05:30",
+        "iso": "2026-10-08T17:29:39+05:30",
         "date": "08 Oct 2026",
-        "time": "04:47 PM",
-        "time24": "16:47",
+        "time": "05:29 PM",
+        "time24": "17:29",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:47 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:29 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T11:17:50.592Z",
-        "epoch_ms": 1791458270592
+        "utc": "2026-10-08T11:59:39.851Z",
+        "epoch_ms": 1791460779851
       },
       "submitted_ago": "just now",
       "status": "closed",
@@ -1357,22 +1370,22 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
       "priority": "low",
       "priority_label": "Low",
       "assigned_to": null,
-      "first_contacted_at": "2026-10-08T11:18:07.571Z",
+      "first_contacted_at": "2026-10-08T11:59:56.861Z",
       "first_contacted_at_ist": {
-        "iso": "2026-10-08T16:48:07+05:30",
+        "iso": "2026-10-08T17:29:56+05:30",
         "date": "08 Oct 2026",
-        "time": "04:48 PM",
-        "time24": "16:48",
+        "time": "05:29 PM",
+        "time24": "17:29",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:48 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:29 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T11:18:07.571Z",
-        "epoch_ms": 1791458287571
+        "utc": "2026-10-08T11:59:56.861Z",
+        "epoch_ms": 1791460796861
       },
       "first_contacted_by": null,
-      "last_contacted_at": "2026-10-08T11:18:07.571Z",
+      "last_contacted_at": "2026-10-08T11:59:56.861Z",
       "last_contacted_at_ist": {
-        "iso": "2026-10-08T16:48:07+05:30",
+        "iso": "2026-10-08T17:29:56+05:30",
         "
 ... (truncated)
 ```
@@ -1389,13 +1402,13 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/export?search=api.test%2B"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `66ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `69ms`
 
 <details><summary>Response sample</summary>
 
 ```json
 Reference,Submitted (IST),Submitted date (IST),Submitted time (IST),Name,Surname,Email,Mobile,Organisation,What is this about,Additional details,Marketing consent,Status,Priority,Assigned to,First contacted (IST),First contacted by,First response time,Last contacted (IST),Last channel,Contact attempts,Closed (IST),Source,Page URL,Submitted (UTC)
-CE-20261008-00023,"Thu, 08 Oct 2026, 04:47 PM IST",2026-10-08,16:47,API,Test,api.test+1791458287075@example.com,'+91 90000 00000,Automated Test,Pricing & plans,automated test 1791458287075,Yes,Closed,Low,,"Thu, 08 Oct 2026, 04:48 PM IST",,just now,"Th
+CE-20261008-00025,"Thu, 08 Oct 2026, 05:29 PM IST",2026-10-08,17:29,API,Test,api.test+1791460796357@example.com,'+91 90000 00000,Automated Test,Pricing & plans,automated test 1791460796357,Yes,Closed,Low,,"Thu, 08 Oct 2026, 05:29 PM IST",,just now,"Th
 ```
 </details>
 
@@ -1407,10 +1420,10 @@ CE-20261008-00023,"Thu, 08 Oct 2026, 04:47 PM IST",2026-10-08,16:47,API,Test,api
 
 **Example curl:**
 ```bash
-curl -s -X DELETE -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/23"
+curl -s -X DELETE -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/contact-enquiries/25"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `35ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `34ms`
 
 <details><summary>Response sample</summary>
 
@@ -1418,8 +1431,8 @@ curl -s -X DELETE -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:401
 {
   "success": true,
   "data": {
-    "id": 23,
-    "reference_no": "CE-20261008-00023",
+    "id": 25,
+    "reference_no": "CE-20261008-00025",
     "message": "Enquiry deleted"
   }
 }
@@ -1441,7 +1454,7 @@ curl -s -X DELETE -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:401
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/stats"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `127ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `130ms`
 
 <details><summary>Response sample</summary>
 
@@ -1450,59 +1463,59 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "success": true,
   "data": {
     "timezone": "Asia/Kolkata",
-    "generated_at": "2026-10-08T11:18:08.032Z",
+    "generated_at": "2026-10-08T11:59:57.644Z",
     "generated_at_ist": {
-      "iso": "2026-10-08T16:48:08+05:30",
+      "iso": "2026-10-08T17:29:57+05:30",
       "date": "08 Oct 2026",
-      "time": "04:48 PM",
-      "time24": "16:48",
+      "time": "05:29 PM",
+      "time24": "17:29",
       "weekday": "Thu",
-      "display": "Thu, 08 Oct 2026, 04:48 PM IST",
+      "display": "Thu, 08 Oct 2026, 05:29 PM IST",
       "timezone": "Asia/Kolkata",
-      "utc": "2026-10-08T11:18:08.032Z",
-      "epoch_ms": 1791458288032
+      "utc": "2026-10-08T11:59:57.644Z",
+      "epoch_ms": 1791460797644
     },
     "totals": {
-      "total": 110,
-      "unresolved": 110,
+      "total": 149,
+      "unresolved": 149,
       "resolved": 0,
       "critical": 0,
-      "error": 40,
-      "warning": 70,
+      "error": 60,
+      "warning": 89,
       "critical_unresolved": 0,
-      "last_hour": 58,
-      "last_24h": 110,
-      "today": 110,
+      "last_hour": 39,
+      "last_24h": 149,
+      "today": 149,
       "yesterday": 0,
-      "last_7_days": 110,
-      "last_30_days": 110,
-      "this_month": 110,
-      "with_user": 55,
-      "affected_users": 2,
-      "affected_users_24h": 2,
-      "affected_users_unresolved": 2,
-      "distinct_issues": 29,
-      "distinct_issues_unresolved": 29,
+      "last_7_days": 149,
+      "last_30_days": 149,
+      "this_month": 149,
+      "with_user": 86,
+      "affected_users": 3,
+      "affected_users_24h": 3,
+      "affected_users_unresolved": 3,
+      "distinct_issues": 35,
+      "distinct_issues_unresolved": 35,
       "services": 3,
-      "external_api": 37,
-      "http_5xx": 17,
-      "http_4xx": 61,
-      "browser": 22,
-      "recovered": 8,
+      "external_api": 62,
+      "http_5xx": 23,
+      "http_4xx": 83,
+      "browser": 26,
+      "recovered": 9,
       "debug": 10,
-      "avg_latency_ms": 180,
+      "avg_latency_ms": 1546,
       "resolved_rate_pct": 0,
-      "last_error_at": "2026-10-08T10:51:34.059Z",
+      "last_error_at": "2026-10-08T11:36:19.391Z",
       "last_error_at_ist": {
-        "iso": "2026-10-08T16:21:34+05:30",
+        "iso": "2026-10-08T17:06:19+05:30",
         "date": "08 Oct 2026",
-        "time": "04:21 PM",
-        "time24": "16:21",
+        "time": "05:06 PM",
+        "time24": "17:06",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:21 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:06 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T10:51:34.059Z",
-        "epoch_ms": 1791456694059
+        "utc": "2026-10-08T11:36:19.391Z",
+        "epoch_ms": 1791459379391
       },
       "last_critical_at": null,
       "last_critical_at_ist": null
@@ -1525,7 +1538,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
         "affected_users": 0
       },
       {
-   
+  
 ... (truncated)
 ```
 </details>
@@ -1636,15 +1649,15 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
       "services": [
         {
           "value": "agentic-document-service",
-          "count": 81
+          "count": 99
         },
         {
           "value": "payment-service",
-          "count": 19
+          "count": 34
         },
         {
           "value": "gateway-service",
-          "count": 10
+          "count": 16
         }
     
 ... (truncated)
@@ -1662,7 +1675,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs?page=1&limit=5&resolved=all&sort=newest"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `67ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `99ms`
 
 <details><summary>Response sample</summary>
 
@@ -1672,65 +1685,60 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "data": {
     "logs": [
       {
-        "id": "bd630875-447e-4cc6-8c56-8d5c484eefa9",
-        "created_at": "2026-10-08T10:51:34.059Z",
+        "id": "d7e5f33d-5f89-487e-be54-25d548963481",
+        "created_at": "2026-10-08T11:36:19.391Z",
         "created_at_ist": {
-          "iso": "2026-10-08T16:21:34+05:30",
+          "iso": "2026-10-08T17:06:19+05:30",
           "date": "08 Oct 2026",
-          "time": "04:21 PM",
-          "time24": "16:21",
+          "time": "05:06 PM",
+          "time24": "17:06",
           "weekday": "Thu",
-          "display": "Thu, 08 Oct 2026, 04:21 PM IST",
+          "display": "Thu, 08 Oct 2026, 05:06 PM IST",
           "timezone": "Asia/Kolkata",
-          "utc": "2026-10-08T10:51:34.059Z",
-          "epoch_ms": 1791456694059
+          "utc": "2026-10-08T11:36:19.391Z",
+          "epoch_ms": 1791459379391
         },
-        "occurred_ago": "26m",
+        "occurred_ago": "23m",
         "service_name": "agentic-document-service",
         "environment": "development",
-        "source": "HTTP",
-        "source_label": "HTTP request",
-        "category": "INTERNAL",
-        "category_label": "Internal error",
-        "severity": "WARNING",
-        "severity_label": "Warning",
-        "request_id": "12626659df3849838ada6b67842ff1e4",
-        "user_id": null,
-        "user_email": null,
-        "user_email_source": null,
-        "user_name": null,
-        "user_key": null,
-        "user": null,
+        "source": "EXTERNAL_API",
+        "source_label": "External API call",
+        "category": "AI_PROVIDER",
+        "category_label": "AI provider",
+        "severity": "ERROR",
+        "severity_label": "Error",
+        "request_id": "c88c79632ab34ce8baf701e65ccaf337",
+        "user_id": "75",
+        "user_email": "sk@gmail.com",
+        "user_email_source": "logged",
+        "user_name": "sk",
+        "user_key": "75",
+        "user": {
+          "id": 75,
+          "email": "sk@gmail.com",
+          "username": "sk",
+          "role": "user",
+          "account_type": "SOLO",
+          "approval_status": "APPROVED",
+          "is_blocked": false,
+          "is_active": true,
+          "active_plan_name": "Pro",
+          "last_seen_at": "2026-10-08T11:46:44.307Z",
+          "last_seen_at_ist": {
+            "iso": "2026-10-08T17:16:44+05:30",
+            "date": "08 Oct 2026",
+            "time": "05:16 PM",
+            "time24": "17:16",
+            "weekday": "Thu",
+            "display": "Thu, 08 Oct 2026, 05:16 PM IST",
+            "timezone": "Asia/Kolkata",
+            "utc": "2026-10-08T11:46:44.307Z",
+            "epoch_ms": 1791460004307
+          },
+          "registered_at": "2026-05-18T06:12:19.363Z"
+        },
         "ip_address": "127.0.0.1",
-        "endpoint": "/audit",
-        "http_method": "POST",
-        "method": null,
-        "action": null,
-        "resource_type": null,
-        "resource_id": null,
-        "status_code": 404,
-        "status_class": "4xx",
-        "user_message": "Not Found",
-        "error_type": "HttpErrorResponse404",
-        "error_message": "Not Found",
-        "has_stack_trace": false,
-        "external": null,
-        "latency_ms": null,
-        "latency_display": null,
-        "fingerprint": "15b973371d8d64ff7e4091b5c4792320111c9b1c28b76062c6ee2db55555649c",
-        "occurrence_count": 43,
-        "unresolved_occurrences": 43,
-        "has_payload": true,
-        "origin": "server",
-        "route": null,
-        "recovered": false,
-        "attempts": null,
-        "after_response_start": false,
-        "related_count": 0,
-        "http_detail": null,
-        "client": null,
-        "is_debug": false,
-        "is
+        "endpoint": "/api/files/Kisan_s_o_Bansi_Salampure_vs_Union_of_India___Others/intelligent-chat
 ... (truncated)
 ```
 </details>
@@ -1746,7 +1754,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs?service=agentic-document-service&limit=50"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `134ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `104ms`
 
 <details><summary>Response sample</summary>
 
@@ -1756,65 +1764,60 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "data": {
     "logs": [
       {
-        "id": "bd630875-447e-4cc6-8c56-8d5c484eefa9",
-        "created_at": "2026-10-08T10:51:34.059Z",
+        "id": "d7e5f33d-5f89-487e-be54-25d548963481",
+        "created_at": "2026-10-08T11:36:19.391Z",
         "created_at_ist": {
-          "iso": "2026-10-08T16:21:34+05:30",
+          "iso": "2026-10-08T17:06:19+05:30",
           "date": "08 Oct 2026",
-          "time": "04:21 PM",
-          "time24": "16:21",
+          "time": "05:06 PM",
+          "time24": "17:06",
           "weekday": "Thu",
-          "display": "Thu, 08 Oct 2026, 04:21 PM IST",
+          "display": "Thu, 08 Oct 2026, 05:06 PM IST",
           "timezone": "Asia/Kolkata",
-          "utc": "2026-10-08T10:51:34.059Z",
-          "epoch_ms": 1791456694059
+          "utc": "2026-10-08T11:36:19.391Z",
+          "epoch_ms": 1791459379391
         },
-        "occurred_ago": "26m",
+        "occurred_ago": "23m",
         "service_name": "agentic-document-service",
         "environment": "development",
-        "source": "HTTP",
-        "source_label": "HTTP request",
-        "category": "INTERNAL",
-        "category_label": "Internal error",
-        "severity": "WARNING",
-        "severity_label": "Warning",
-        "request_id": "12626659df3849838ada6b67842ff1e4",
-        "user_id": null,
-        "user_email": null,
-        "user_email_source": null,
-        "user_name": null,
-        "user_key": null,
-        "user": null,
+        "source": "EXTERNAL_API",
+        "source_label": "External API call",
+        "category": "AI_PROVIDER",
+        "category_label": "AI provider",
+        "severity": "ERROR",
+        "severity_label": "Error",
+        "request_id": "c88c79632ab34ce8baf701e65ccaf337",
+        "user_id": "75",
+        "user_email": "sk@gmail.com",
+        "user_email_source": "logged",
+        "user_name": "sk",
+        "user_key": "75",
+        "user": {
+          "id": 75,
+          "email": "sk@gmail.com",
+          "username": "sk",
+          "role": "user",
+          "account_type": "SOLO",
+          "approval_status": "APPROVED",
+          "is_blocked": false,
+          "is_active": true,
+          "active_plan_name": "Pro",
+          "last_seen_at": "2026-10-08T11:46:44.307Z",
+          "last_seen_at_ist": {
+            "iso": "2026-10-08T17:16:44+05:30",
+            "date": "08 Oct 2026",
+            "time": "05:16 PM",
+            "time24": "17:16",
+            "weekday": "Thu",
+            "display": "Thu, 08 Oct 2026, 05:16 PM IST",
+            "timezone": "Asia/Kolkata",
+            "utc": "2026-10-08T11:46:44.307Z",
+            "epoch_ms": 1791460004307
+          },
+          "registered_at": "2026-05-18T06:12:19.363Z"
+        },
         "ip_address": "127.0.0.1",
-        "endpoint": "/audit",
-        "http_method": "POST",
-        "method": null,
-        "action": null,
-        "resource_type": null,
-        "resource_id": null,
-        "status_code": 404,
-        "status_class": "4xx",
-        "user_message": "Not Found",
-        "error_type": "HttpErrorResponse404",
-        "error_message": "Not Found",
-        "has_stack_trace": false,
-        "external": null,
-        "latency_ms": null,
-        "latency_display": null,
-        "fingerprint": "15b973371d8d64ff7e4091b5c4792320111c9b1c28b76062c6ee2db55555649c",
-        "occurrence_count": 43,
-        "unresolved_occurrences": 43,
-        "has_payload": true,
-        "origin": "server",
-        "route": null,
-        "recovered": false,
-        "attempts": null,
-        "after_response_start": false,
-        "related_count": 0,
-        "http_detail": null,
-        "client": null,
-        "is_debug": false,
-        "is
+        "endpoint": "/api/files/Kisan_s_o_Bansi_Salampure_vs_Union_of_India___Others/intelligent-chat
 ... (truncated)
 ```
 </details>
@@ -1830,7 +1833,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs?resolved=false&limit=50"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `139ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `112ms`
 
 <details><summary>Response sample</summary>
 
@@ -1840,65 +1843,60 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "data": {
     "logs": [
       {
-        "id": "bd630875-447e-4cc6-8c56-8d5c484eefa9",
-        "created_at": "2026-10-08T10:51:34.059Z",
+        "id": "d7e5f33d-5f89-487e-be54-25d548963481",
+        "created_at": "2026-10-08T11:36:19.391Z",
         "created_at_ist": {
-          "iso": "2026-10-08T16:21:34+05:30",
+          "iso": "2026-10-08T17:06:19+05:30",
           "date": "08 Oct 2026",
-          "time": "04:21 PM",
-          "time24": "16:21",
+          "time": "05:06 PM",
+          "time24": "17:06",
           "weekday": "Thu",
-          "display": "Thu, 08 Oct 2026, 04:21 PM IST",
+          "display": "Thu, 08 Oct 2026, 05:06 PM IST",
           "timezone": "Asia/Kolkata",
-          "utc": "2026-10-08T10:51:34.059Z",
-          "epoch_ms": 1791456694059
+          "utc": "2026-10-08T11:36:19.391Z",
+          "epoch_ms": 1791459379391
         },
-        "occurred_ago": "26m",
+        "occurred_ago": "23m",
         "service_name": "agentic-document-service",
         "environment": "development",
-        "source": "HTTP",
-        "source_label": "HTTP request",
-        "category": "INTERNAL",
-        "category_label": "Internal error",
-        "severity": "WARNING",
-        "severity_label": "Warning",
-        "request_id": "12626659df3849838ada6b67842ff1e4",
-        "user_id": null,
-        "user_email": null,
-        "user_email_source": null,
-        "user_name": null,
-        "user_key": null,
-        "user": null,
+        "source": "EXTERNAL_API",
+        "source_label": "External API call",
+        "category": "AI_PROVIDER",
+        "category_label": "AI provider",
+        "severity": "ERROR",
+        "severity_label": "Error",
+        "request_id": "c88c79632ab34ce8baf701e65ccaf337",
+        "user_id": "75",
+        "user_email": "sk@gmail.com",
+        "user_email_source": "logged",
+        "user_name": "sk",
+        "user_key": "75",
+        "user": {
+          "id": 75,
+          "email": "sk@gmail.com",
+          "username": "sk",
+          "role": "user",
+          "account_type": "SOLO",
+          "approval_status": "APPROVED",
+          "is_blocked": false,
+          "is_active": true,
+          "active_plan_name": "Pro",
+          "last_seen_at": "2026-10-08T11:46:44.307Z",
+          "last_seen_at_ist": {
+            "iso": "2026-10-08T17:16:44+05:30",
+            "date": "08 Oct 2026",
+            "time": "05:16 PM",
+            "time24": "17:16",
+            "weekday": "Thu",
+            "display": "Thu, 08 Oct 2026, 05:16 PM IST",
+            "timezone": "Asia/Kolkata",
+            "utc": "2026-10-08T11:46:44.307Z",
+            "epoch_ms": 1791460004307
+          },
+          "registered_at": "2026-05-18T06:12:19.363Z"
+        },
         "ip_address": "127.0.0.1",
-        "endpoint": "/audit",
-        "http_method": "POST",
-        "method": null,
-        "action": null,
-        "resource_type": null,
-        "resource_id": null,
-        "status_code": 404,
-        "status_class": "4xx",
-        "user_message": "Not Found",
-        "error_type": "HttpErrorResponse404",
-        "error_message": "Not Found",
-        "has_stack_trace": false,
-        "external": null,
-        "latency_ms": null,
-        "latency_display": null,
-        "fingerprint": "15b973371d8d64ff7e4091b5c4792320111c9b1c28b76062c6ee2db55555649c",
-        "occurrence_count": 43,
-        "unresolved_occurrences": 43,
-        "has_payload": true,
-        "origin": "server",
-        "route": null,
-        "recovered": false,
-        "attempts": null,
-        "after_response_start": false,
-        "related_count": 0,
-        "http_detail": null,
-        "client": null,
-        "is_debug": false,
-        "is
+        "endpoint": "/api/files/Kisan_s_o_Bansi_Salampure_vs_Union_of_India___Others/intelligent-chat
 ... (truncated)
 ```
 </details>
@@ -1914,7 +1912,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs?origin=browser&limit=50"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `104ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `107ms`
 
 <details><summary>Response sample</summary>
 
@@ -1924,20 +1922,20 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "data": {
     "logs": [
       {
-        "id": "5d832fad-8b0c-42ee-ad3e-b18d922e2d87",
-        "created_at": "2026-10-08T10:40:51.696Z",
+        "id": "d298f7fb-f5a4-440a-8402-3caba73c812a",
+        "created_at": "2026-10-08T11:31:41.610Z",
         "created_at_ist": {
-          "iso": "2026-10-08T16:10:51+05:30",
+          "iso": "2026-10-08T17:01:41+05:30",
           "date": "08 Oct 2026",
-          "time": "04:10 PM",
-          "time24": "16:10",
+          "time": "05:01 PM",
+          "time24": "17:01",
           "weekday": "Thu",
-          "display": "Thu, 08 Oct 2026, 04:10 PM IST",
+          "display": "Thu, 08 Oct 2026, 05:01 PM IST",
           "timezone": "Asia/Kolkata",
-          "utc": "2026-10-08T10:40:51.696Z",
-          "epoch_ms": 1791456051696
+          "utc": "2026-10-08T11:31:41.610Z",
+          "epoch_ms": 1791459101610
         },
-        "occurred_ago": "37m",
+        "occurred_ago": "28m",
         "service_name": "agentic-document-service",
         "environment": "development",
         "source": "EXTERNAL_API",
@@ -1946,7 +1944,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
         "category_label": "External API",
         "severity": "ERROR",
         "severity_label": "Error",
-        "request_id": "11322c55e0674b85a7e28028c2ac171f",
+        "request_id": "7c23a1e7155142818b800b4185799d36",
         "user_id": "76",
         "user_email": "pk@gmail.com",
         "user_email_source": "logged",
@@ -1962,17 +1960,17 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
           "is_blocked": false,
           "is_active": true,
           "active_plan_name": null,
-          "last_seen_at": "2026-10-08T11:16:44.320Z",
+          "last_seen_at": "2026-10-08T11:48:05.703Z",
           "last_seen_at_ist": {
-            "iso": "2026-10-08T16:46:44+05:30",
+            "iso": "2026-10-08T17:18:05+05:30",
             "date": "08 Oct 2026",
-            "time": "04:46 PM",
-            "time24": "16:46",
+            "time": "05:18 PM",
+            "time24": "17:18",
             "weekday": "Thu",
-            "display": "Thu, 08 Oct 2026, 04:46 PM IST",
+            "display": "Thu, 08 Oct 2026, 05:18 PM IST",
             "timezone": "Asia/Kolkata",
-            "utc": "2026-10-08T11:16:44.320Z",
-            "epoch_ms": 1791458204320
+            "utc": "2026-10-08T11:48:05.703Z",
+            "epoch_ms": 1791460085703
           },
           "registered_at": "2026-05-18T06:47:13.500Z"
         },
@@ -1995,7 +1993,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs?exclude_debug=true&limit=100"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `131ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `199ms`
 
 <details><summary>Response sample</summary>
 
@@ -2005,65 +2003,60 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "data": {
     "logs": [
       {
-        "id": "bd630875-447e-4cc6-8c56-8d5c484eefa9",
-        "created_at": "2026-10-08T10:51:34.059Z",
+        "id": "d7e5f33d-5f89-487e-be54-25d548963481",
+        "created_at": "2026-10-08T11:36:19.391Z",
         "created_at_ist": {
-          "iso": "2026-10-08T16:21:34+05:30",
+          "iso": "2026-10-08T17:06:19+05:30",
           "date": "08 Oct 2026",
-          "time": "04:21 PM",
-          "time24": "16:21",
+          "time": "05:06 PM",
+          "time24": "17:06",
           "weekday": "Thu",
-          "display": "Thu, 08 Oct 2026, 04:21 PM IST",
+          "display": "Thu, 08 Oct 2026, 05:06 PM IST",
           "timezone": "Asia/Kolkata",
-          "utc": "2026-10-08T10:51:34.059Z",
-          "epoch_ms": 1791456694059
+          "utc": "2026-10-08T11:36:19.391Z",
+          "epoch_ms": 1791459379391
         },
-        "occurred_ago": "26m",
+        "occurred_ago": "23m",
         "service_name": "agentic-document-service",
         "environment": "development",
-        "source": "HTTP",
-        "source_label": "HTTP request",
-        "category": "INTERNAL",
-        "category_label": "Internal error",
-        "severity": "WARNING",
-        "severity_label": "Warning",
-        "request_id": "12626659df3849838ada6b67842ff1e4",
-        "user_id": null,
-        "user_email": null,
-        "user_email_source": null,
-        "user_name": null,
-        "user_key": null,
-        "user": null,
+        "source": "EXTERNAL_API",
+        "source_label": "External API call",
+        "category": "AI_PROVIDER",
+        "category_label": "AI provider",
+        "severity": "ERROR",
+        "severity_label": "Error",
+        "request_id": "c88c79632ab34ce8baf701e65ccaf337",
+        "user_id": "75",
+        "user_email": "sk@gmail.com",
+        "user_email_source": "logged",
+        "user_name": "sk",
+        "user_key": "75",
+        "user": {
+          "id": 75,
+          "email": "sk@gmail.com",
+          "username": "sk",
+          "role": "user",
+          "account_type": "SOLO",
+          "approval_status": "APPROVED",
+          "is_blocked": false,
+          "is_active": true,
+          "active_plan_name": "Pro",
+          "last_seen_at": "2026-10-08T11:46:44.307Z",
+          "last_seen_at_ist": {
+            "iso": "2026-10-08T17:16:44+05:30",
+            "date": "08 Oct 2026",
+            "time": "05:16 PM",
+            "time24": "17:16",
+            "weekday": "Thu",
+            "display": "Thu, 08 Oct 2026, 05:16 PM IST",
+            "timezone": "Asia/Kolkata",
+            "utc": "2026-10-08T11:46:44.307Z",
+            "epoch_ms": 1791460004307
+          },
+          "registered_at": "2026-05-18T06:12:19.363Z"
+        },
         "ip_address": "127.0.0.1",
-        "endpoint": "/audit",
-        "http_method": "POST",
-        "method": null,
-        "action": null,
-        "resource_type": null,
-        "resource_id": null,
-        "status_code": 404,
-        "status_class": "4xx",
-        "user_message": "Not Found",
-        "error_type": "HttpErrorResponse404",
-        "error_message": "Not Found",
-        "has_stack_trace": false,
-        "external": null,
-        "latency_ms": null,
-        "latency_display": null,
-        "fingerprint": "15b973371d8d64ff7e4091b5c4792320111c9b1c28b76062c6ee2db55555649c",
-        "occurrence_count": 43,
-        "unresolved_occurrences": 43,
-        "has_payload": true,
-        "origin": "server",
-        "route": null,
-        "recovered": false,
-        "attempts": null,
-        "after_response_start": false,
-        "related_count": 0,
-        "http_detail": null,
-        "client": null,
-        "is_debug": false,
-        "is
+        "endpoint": "/api/files/Kisan_s_o_Bansi_Salampure_vs_Union_of_India___Others/intelligent-chat
 ... (truncated)
 ```
 </details>
@@ -2079,7 +2072,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs?search=zzz-no-such-error-zzz"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `67ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `70ms`
 
 <details><summary>Response sample</summary>
 
@@ -2154,7 +2147,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
       "Unknown status_code \"abc\" (expected 100–599)"
     ]
   },
-  "requestId": "fc044fa4-e45e-4427-8c47-89373c8b6085"
+  "requestId": "c85eba3e-1332-4d64-9c7b-1a70dd3ec117"
 }
 ```
 </details>
@@ -2170,7 +2163,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs?from=2026-02-01&to=2026-01-01"
 ```
 
-**Test Result:** ✅ PASS — Status: `400` — Latency: `1ms`
+**Test Result:** ✅ PASS — Status: `400` — Latency: `2ms`
 
 <details><summary>Response sample</summary>
 
@@ -2184,7 +2177,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
       "\"from\" must be on or before \"to\""
     ]
   },
-  "requestId": "a6028468-3760-4edb-9845-35e78ae872c3"
+  "requestId": "a3b3d210-7c7f-4565-92fd-ca164c53cb25"
 }
 ```
 </details>
@@ -2200,7 +2193,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/users?page=1&limit=10&sort=most_errors"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `95ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `100ms`
 
 <details><summary>Response sample</summary>
 
@@ -2225,26 +2218,26 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
           "is_blocked": false,
           "is_active": true,
           "active_plan_name": null,
-          "last_seen_at": "2026-10-08T11:16:44.320Z",
+          "last_seen_at": "2026-10-08T11:48:05.703Z",
           "last_seen_at_ist": {
-            "iso": "2026-10-08T16:46:44+05:30",
+            "iso": "2026-10-08T17:18:05+05:30",
             "date": "08 Oct 2026",
-            "time": "04:46 PM",
-            "time24": "16:46",
+            "time": "05:18 PM",
+            "time24": "17:18",
             "weekday": "Thu",
-            "display": "Thu, 08 Oct 2026, 04:46 PM IST",
+            "display": "Thu, 08 Oct 2026, 05:18 PM IST",
             "timezone": "Asia/Kolkata",
-            "utc": "2026-10-08T11:16:44.320Z",
-            "epoch_ms": 1791458204320
+            "utc": "2026-10-08T11:48:05.703Z",
+            "epoch_ms": 1791460085703
           },
           "registered_at": "2026-05-18T06:47:13.500Z"
         },
-        "total": 50,
-        "unresolved": 50,
+        "total": 70,
+        "unresolved": 70,
         "critical": 0,
-        "last_24h": 50,
-        "last_7_days": 50,
-        "distinct_errors": 14,
+        "last_24h": 70,
+        "last_7_days": 70,
+        "distinct_errors": 16,
         "services": [
           "agentic-document-service",
           "gateway-service",
@@ -2262,14 +2255,14 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
           "utc": "2026-10-08T09:57:48.236Z",
           "epoch_ms": 1791453468236
         },
-        "last_error_at": "2026-10-08T10:40:52.144Z",
+        "last_error_at": "2026-10-08T11:33:28.739Z",
         "last_error_at_ist": {
-          "iso": "2026-10-08T16:10:52+05:30",
+          "iso": "2026-10-08T17:03:28+05:30",
           "date": "08 Oct 2026",
-          "time": "04:10 PM",
-          "time24": "16:10",
+          "time": "05:03 PM",
+          "time24": "17:03",
           "weekday": "Thu",
-          "display": "Thu, 08 Oct 2026, 04:10 PM I
+          "display": "Thu, 08 Oct 2026, 05:03 PM I
 ... (truncated)
 ```
 </details>
@@ -2285,7 +2278,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/issues?limit=10"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `36ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `35ms`
 
 <details><summary>Response sample</summary>
 
@@ -2337,7 +2330,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
           "utc": "2026-10-08T10:51:34.059Z",
           "epoch_ms": 1791456694059
         },
-        "last_seen_ago": "26m",
+        "last_seen_ago": "1h 8m",
         "latest_id": "bd630875-447e-4cc6-8c56-8d5c484eefa9"
       },
       {
@@ -2351,7 +2344,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
         "category_label": "Internal error",
         "severity": "WARNING",
         "error_type": "HttpErrorResponse404",
-        "error_message": "No acti
+        "error_message": "No ac
 ... (truncated)
 ```
 </details>
@@ -2367,13 +2360,13 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/export?resolved=all"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `160ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `140ms`
 
 <details><summary>Response sample</summary>
 
 ```json
 ID,Occurred (IST),Date (IST),Time (IST),Service,Environment,Source,Category,Severity,HTTP status,Method,Endpoint,Code location,Action,Resource type,Resource id,Error type,Error message,User message,User id,User email,User name,IP address,Request id,External provider,External endpoint,External model,External status,External error code,Latency (ms),Occurrences,Fingerprint,Resolved,Resolved by,Resolved at (IST),Resolution note,Occurred (UTC)
-bd630875-447e-4cc6-8c56-8d5c484eefa9,"Thu, 08 Oct 2026, 04:21 PM IST",2026-10-08,16:21,agentic-document-service,development,HTTP,INTERNAL,WARNING,404,POST,/
+d7e5f33d-5f89-487e-be54-25d548963481,"Thu, 08 Oct 2026, 05:06 PM IST",2026-10-08,17:06,agentic-document-service,development,EXTERNAL_API,AI_PROVIDER,ERROR,2
 ```
 </details>
 
@@ -2388,7 +2381,7 @@ bd630875-447e-4cc6-8c56-8d5c484eefa9,"Thu, 08 Oct 2026, 04:21 PM IST",2026-10-08
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/not-a-uuid"
 ```
 
-**Test Result:** ✅ PASS — Status: `400` — Latency: `1ms`
+**Test Result:** ✅ PASS — Status: `400` — Latency: `2ms`
 
 <details><summary>Response sample</summary>
 
@@ -2399,7 +2392,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
     "code": "VALIDATION_ERROR",
     "message": "Error log id must be a UUID"
   },
-  "requestId": "16544e51-82e4-411a-978f-0760b197f694"
+  "requestId": "1a47abad-b80b-4f08-aa3c-7871f260253f"
 }
 ```
 </details>
@@ -2415,7 +2408,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/00000000-0000-4000-8000-000000000000"
 ```
 
-**Test Result:** ✅ PASS — Status: `404` — Latency: `33ms`
+**Test Result:** ✅ PASS — Status: `404` — Latency: `35ms`
 
 <details><summary>Response sample</summary>
 
@@ -2426,7 +2419,7 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
     "code": "NOT_FOUND",
     "message": "Error log not found"
   },
-  "requestId": "91e331a7-eefa-4c63-9185-7bbaef081772"
+  "requestId": "dde6777d-113a-4028-b880-97a71a629e94"
 }
 ```
 </details>
@@ -2439,10 +2432,10 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 
 **Example curl:**
 ```bash
-curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/bd630875-447e-4cc6-8c56-8d5c484eefa9"
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/d7e5f33d-5f89-487e-be54-25d548963481"
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `100ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `133ms`
 
 <details><summary>Response sample</summary>
 
@@ -2451,69 +2444,62 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
   "success": true,
   "data": {
     "log": {
-      "id": "bd630875-447e-4cc6-8c56-8d5c484eefa9",
-      "created_at": "2026-10-08T10:51:34.059Z",
+      "id": "d7e5f33d-5f89-487e-be54-25d548963481",
+      "created_at": "2026-10-08T11:36:19.391Z",
       "created_at_ist": {
-        "iso": "2026-10-08T16:21:34+05:30",
+        "iso": "2026-10-08T17:06:19+05:30",
         "date": "08 Oct 2026",
-        "time": "04:21 PM",
-        "time24": "16:21",
+        "time": "05:06 PM",
+        "time24": "17:06",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:21 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:06 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T10:51:34.059Z",
-        "epoch_ms": 1791456694059
+        "utc": "2026-10-08T11:36:19.391Z",
+        "epoch_ms": 1791459379391
       },
-      "occurred_ago": "26m",
+      "occurred_ago": "23m",
       "service_name": "agentic-document-service",
       "environment": "development",
-      "source": "HTTP",
-      "source_label": "HTTP request",
-      "category": "INTERNAL",
-      "category_label": "Internal error",
-      "severity": "WARNING",
-      "severity_label": "Warning",
-      "request_id": "12626659df3849838ada6b67842ff1e4",
-      "user_id": null,
-      "user_email": null,
-      "user_email_source": null,
-      "user_name": null,
-      "user_key": null,
-      "user": null,
+      "source": "EXTERNAL_API",
+      "source_label": "External API call",
+      "category": "AI_PROVIDER",
+      "category_label": "AI provider",
+      "severity": "ERROR",
+      "severity_label": "Error",
+      "request_id": "c88c79632ab34ce8baf701e65ccaf337",
+      "user_id": "75",
+      "user_email": "sk@gmail.com",
+      "user_email_source": "logged",
+      "user_name": "sk",
+      "user_key": "75",
+      "user": {
+        "id": 75,
+        "email": "sk@gmail.com",
+        "username": "sk",
+        "role": "user",
+        "account_type": "SOLO",
+        "approval_status": "APPROVED",
+        "is_blocked": false,
+        "is_active": true,
+        "active_plan_name": "Pro",
+        "last_seen_at": "2026-10-08T11:46:44.307Z",
+        "last_seen_at_ist": {
+          "iso": "2026-10-08T17:16:44+05:30",
+          "date": "08 Oct 2026",
+          "time": "05:16 PM",
+          "time24": "17:16",
+          "weekday": "Thu",
+          "display": "Thu, 08 Oct 2026, 05:16 PM IST",
+          "timezone": "Asia/Kolkata",
+          "utc": "2026-10-08T11:46:44.307Z",
+          "epoch_ms": 1791460004307
+        },
+        "registered_at": "2026-05-18T06:12:19.363Z"
+      },
       "ip_address": "127.0.0.1",
-      "endpoint": "/audit",
+      "endpoint": "/api/files/Kisan_s_o_Bansi_Salampure_vs_Union_of_India___Others/intelligent-chat/stream",
       "http_method": "POST",
-      "method": null,
-      "action": null,
-      "resource_type": null,
-      "resource_id": null,
-      "status_code": 404,
-      "status_class": "4xx",
-      "user_message": "Not Found",
-      "error_type": "HttpErrorResponse404",
-      "error_message": "Not Found",
-      "has_stack_trace": false,
-      "external": null,
-      "latency_ms": null,
-      "latency_display": null,
-      "fingerprint": "15b973371d8d64ff7e4091b5c4792320111c9b1c28b76062c6ee2db55555649c",
-      "occurrence_count": 43,
-      "unresolved_occurrences": 43,
-      "has_payload": true,
-      "origin": "server",
-      "route": null,
-      "recovered": false,
-      "attempts": null,
-      "after_response_start": false,
-      "related_count": 0,
-      "http_detail": null,
-      "client": null,
-      "is_debug": false,
-      "is_resolved": false,
-      "resolved_by": null,
-      "resolved_at": null,
-      "resolved_at_ist": null,
-      "resolution_note"
+      "method": ".venv.Lib.site-packages.google.genai.errors.APIError.raise_er
 ... (truncated)
 ```
 </details>
@@ -2526,10 +2512,10 @@ curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/a
 
 **Example curl:**
 ```bash
-curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/bd630875-447e-4cc6-8c56-8d5c484eefa9/resolve" -H "Content-Type: application/json" -d '{"resolved":true,"note":"automated test: resolved"}'
+curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/d7e5f33d-5f89-487e-be54-25d548963481/resolve" -H "Content-Type: application/json" -d '{"resolved":true,"note":"automated test: resolved"}'
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `103ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `142ms`
 
 <details><summary>Response sample</summary>
 
@@ -2538,68 +2524,62 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
   "success": true,
   "data": {
     "log": {
-      "id": "bd630875-447e-4cc6-8c56-8d5c484eefa9",
-      "created_at": "2026-10-08T10:51:34.059Z",
+      "id": "d7e5f33d-5f89-487e-be54-25d548963481",
+      "created_at": "2026-10-08T11:36:19.391Z",
       "created_at_ist": {
-        "iso": "2026-10-08T16:21:34+05:30",
+        "iso": "2026-10-08T17:06:19+05:30",
         "date": "08 Oct 2026",
-        "time": "04:21 PM",
-        "time24": "16:21",
+        "time": "05:06 PM",
+        "time24": "17:06",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:21 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:06 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T10:51:34.059Z",
-        "epoch_ms": 1791456694059
+        "utc": "2026-10-08T11:36:19.391Z",
+        "epoch_ms": 1791459379391
       },
-      "occurred_ago": "26m",
+      "occurred_ago": "23m",
       "service_name": "agentic-document-service",
       "environment": "development",
-      "source": "HTTP",
-      "source_label": "HTTP request",
-      "category": "INTERNAL",
-      "category_label": "Internal error",
-      "severity": "WARNING",
-      "severity_label": "Warning",
-      "request_id": "12626659df3849838ada6b67842ff1e4",
-      "user_id": null,
-      "user_email": null,
-      "user_email_source": null,
-      "user_name": null,
-      "user_key": null,
-      "user": null,
+      "source": "EXTERNAL_API",
+      "source_label": "External API call",
+      "category": "AI_PROVIDER",
+      "category_label": "AI provider",
+      "severity": "ERROR",
+      "severity_label": "Error",
+      "request_id": "c88c79632ab34ce8baf701e65ccaf337",
+      "user_id": "75",
+      "user_email": "sk@gmail.com",
+      "user_email_source": "logged",
+      "user_name": "sk",
+      "user_key": "75",
+      "user": {
+        "id": 75,
+        "email": "sk@gmail.com",
+        "username": "sk",
+        "role": "user",
+        "account_type": "SOLO",
+        "approval_status": "APPROVED",
+        "is_blocked": false,
+        "is_active": true,
+        "active_plan_name": "Pro",
+        "last_seen_at": "2026-10-08T11:46:44.307Z",
+        "last_seen_at_ist": {
+          "iso": "2026-10-08T17:16:44+05:30",
+          "date": "08 Oct 2026",
+          "time": "05:16 PM",
+          "time24": "17:16",
+          "weekday": "Thu",
+          "display": "Thu, 08 Oct 2026, 05:16 PM IST",
+          "timezone": "Asia/Kolkata",
+          "utc": "2026-10-08T11:46:44.307Z",
+          "epoch_ms": 1791460004307
+        },
+        "registered_at": "2026-05-18T06:12:19.363Z"
+      },
       "ip_address": "127.0.0.1",
-      "endpoint": "/audit",
+      "endpoint": "/api/files/Kisan_s_o_Bansi_Salampure_vs_Union_of_India___Others/intelligent-chat/stream",
       "http_method": "POST",
-      "method": null,
-      "action": null,
-      "resource_type": null,
-      "resource_id": null,
-      "status_code": 404,
-      "status_class": "4xx",
-      "user_message": "Not Found",
-      "error_type": "HttpErrorResponse404",
-      "error_message": "Not Found",
-      "has_stack_trace": false,
-      "external": null,
-      "latency_ms": null,
-      "latency_display": null,
-      "fingerprint": "15b973371d8d64ff7e4091b5c4792320111c9b1c28b76062c6ee2db55555649c",
-      "occurrence_count": 43,
-      "unresolved_occurrences": 42,
-      "has_payload": true,
-      "origin": "server",
-      "route": null,
-      "recovered": false,
-      "attempts": null,
-      "after_response_start": false,
-      "related_count": 0,
-      "http_detail": null,
-      "client": null,
-      "is_debug": false,
-      "is_resolved": true,
-      "resolved_by": "admin-token",
-      "resolved_at": "2026-10-08T11:17:53.104Z",
-      "resolved_at_ist":
+      "method": ".venv.Lib.site-packages.google.genai.errors.APIError.raise_er
 ... (truncated)
 ```
 </details>
@@ -2612,10 +2592,10 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
 
 **Example curl:**
 ```bash
-curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/bd630875-447e-4cc6-8c56-8d5c484eefa9/resolve" -H "Content-Type: application/json" -d '{"resolved":false}'
+curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/d7e5f33d-5f89-487e-be54-25d548963481/resolve" -H "Content-Type: application/json" -d '{"resolved":false}'
 ```
 
-**Test Result:** ✅ PASS — Status: `200` — Latency: `104ms`
+**Test Result:** ✅ PASS — Status: `200` — Latency: `138ms`
 
 <details><summary>Response sample</summary>
 
@@ -2624,69 +2604,62 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
   "success": true,
   "data": {
     "log": {
-      "id": "bd630875-447e-4cc6-8c56-8d5c484eefa9",
-      "created_at": "2026-10-08T10:51:34.059Z",
+      "id": "d7e5f33d-5f89-487e-be54-25d548963481",
+      "created_at": "2026-10-08T11:36:19.391Z",
       "created_at_ist": {
-        "iso": "2026-10-08T16:21:34+05:30",
+        "iso": "2026-10-08T17:06:19+05:30",
         "date": "08 Oct 2026",
-        "time": "04:21 PM",
-        "time24": "16:21",
+        "time": "05:06 PM",
+        "time24": "17:06",
         "weekday": "Thu",
-        "display": "Thu, 08 Oct 2026, 04:21 PM IST",
+        "display": "Thu, 08 Oct 2026, 05:06 PM IST",
         "timezone": "Asia/Kolkata",
-        "utc": "2026-10-08T10:51:34.059Z",
-        "epoch_ms": 1791456694059
+        "utc": "2026-10-08T11:36:19.391Z",
+        "epoch_ms": 1791459379391
       },
-      "occurred_ago": "26m",
+      "occurred_ago": "23m",
       "service_name": "agentic-document-service",
       "environment": "development",
-      "source": "HTTP",
-      "source_label": "HTTP request",
-      "category": "INTERNAL",
-      "category_label": "Internal error",
-      "severity": "WARNING",
-      "severity_label": "Warning",
-      "request_id": "12626659df3849838ada6b67842ff1e4",
-      "user_id": null,
-      "user_email": null,
-      "user_email_source": null,
-      "user_name": null,
-      "user_key": null,
-      "user": null,
+      "source": "EXTERNAL_API",
+      "source_label": "External API call",
+      "category": "AI_PROVIDER",
+      "category_label": "AI provider",
+      "severity": "ERROR",
+      "severity_label": "Error",
+      "request_id": "c88c79632ab34ce8baf701e65ccaf337",
+      "user_id": "75",
+      "user_email": "sk@gmail.com",
+      "user_email_source": "logged",
+      "user_name": "sk",
+      "user_key": "75",
+      "user": {
+        "id": 75,
+        "email": "sk@gmail.com",
+        "username": "sk",
+        "role": "user",
+        "account_type": "SOLO",
+        "approval_status": "APPROVED",
+        "is_blocked": false,
+        "is_active": true,
+        "active_plan_name": "Pro",
+        "last_seen_at": "2026-10-08T11:46:44.307Z",
+        "last_seen_at_ist": {
+          "iso": "2026-10-08T17:16:44+05:30",
+          "date": "08 Oct 2026",
+          "time": "05:16 PM",
+          "time24": "17:16",
+          "weekday": "Thu",
+          "display": "Thu, 08 Oct 2026, 05:16 PM IST",
+          "timezone": "Asia/Kolkata",
+          "utc": "2026-10-08T11:46:44.307Z",
+          "epoch_ms": 1791460004307
+        },
+        "registered_at": "2026-05-18T06:12:19.363Z"
+      },
       "ip_address": "127.0.0.1",
-      "endpoint": "/audit",
+      "endpoint": "/api/files/Kisan_s_o_Bansi_Salampure_vs_Union_of_India___Others/intelligent-chat/stream",
       "http_method": "POST",
-      "method": null,
-      "action": null,
-      "resource_type": null,
-      "resource_id": null,
-      "status_code": 404,
-      "status_class": "4xx",
-      "user_message": "Not Found",
-      "error_type": "HttpErrorResponse404",
-      "error_message": "Not Found",
-      "has_stack_trace": false,
-      "external": null,
-      "latency_ms": null,
-      "latency_display": null,
-      "fingerprint": "15b973371d8d64ff7e4091b5c4792320111c9b1c28b76062c6ee2db55555649c",
-      "occurrence_count": 43,
-      "unresolved_occurrences": 43,
-      "has_payload": true,
-      "origin": "server",
-      "route": null,
-      "recovered": false,
-      "attempts": null,
-      "after_response_start": false,
-      "related_count": 0,
-      "http_detail": null,
-      "client": null,
-      "is_debug": false,
-      "is_resolved": false,
-      "resolved_by": null,
-      "resolved_at": null,
-      "resolved_at_ist": null,
-      "resolution_note"
+      "method": ".venv.Lib.site-packages.google.genai.errors.APIError.raise_er
 ... (truncated)
 ```
 </details>
@@ -2699,7 +2672,7 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
 
 **Example curl:**
 ```bash
-curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/resolve" -H "Content-Type: application/json" -d '{"ids":["bd630875-447e-4cc6-8c56-8d5c484eefa9"],"resolved":true,"note":"automated test: bulk"}'
+curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/resolve" -H "Content-Type: application/json" -d '{"ids":["d7e5f33d-5f89-487e-be54-25d548963481"],"resolved":true,"note":"automated test: bulk"}'
 ```
 
 **Test Result:** ✅ PASS — Status: `200` — Latency: `37ms`
@@ -2713,7 +2686,7 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
     "resolved": true,
     "changed": 1,
     "ids": [
-      "bd630875-447e-4cc6-8c56-8d5c484eefa9"
+      "d7e5f33d-5f89-487e-be54-25d548963481"
     ]
   }
 }
@@ -2728,7 +2701,7 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
 
 **Example curl:**
 ```bash
-curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/resolve" -H "Content-Type: application/json" -d '{"fingerprint":"15b973371d8d64ff7e4091b5c4792320111c9b1c28b76062c6ee2db55555649c","resolved":false}'
+curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/resolve" -H "Content-Type: application/json" -d '{"fingerprint":"778433c031956d70a77b86d6ce1fe42e0f9a0fbd1a5c2bada285cdd1bf35347c","resolved":false}'
 ```
 
 **Test Result:** ✅ PASS — Status: `200` — Latency: `37ms`
@@ -2742,7 +2715,7 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
     "resolved": false,
     "changed": 1,
     "ids": [
-      "bd630875-447e-4cc6-8c56-8d5c484eefa9"
+      "d7e5f33d-5f89-487e-be54-25d548963481"
     ]
   }
 }
@@ -2760,7 +2733,7 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
 curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/resolve" -H "Content-Type: application/json" -d '{"resolved":true}'
 ```
 
-**Test Result:** ✅ PASS — Status: `400` — Latency: `2ms`
+**Test Result:** ✅ PASS — Status: `400` — Latency: `4ms`
 
 <details><summary>Response sample</summary>
 
@@ -2774,7 +2747,7 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
       "\"value\" must contain at least one of [ids, fingerprint]"
     ]
   },
-  "requestId": "b95d12d7-32c3-415a-9ce6-fcbf8b41314e"
+  "requestId": "355f866d-1213-4a10-a5e4-b0a76db3d7e3"
 }
 ```
 </details>
@@ -2790,7 +2763,7 @@ curl -s -X PATCH -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010
 curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/bulk-delete" -H "Content-Type: application/json" -d '{"ids":["not-a-uuid"]}'
 ```
 
-**Test Result:** ✅ PASS — Status: `400` — Latency: `2ms`
+**Test Result:** ✅ PASS — Status: `400` — Latency: `3ms`
 
 <details><summary>Response sample</summary>
 
@@ -2804,7 +2777,7 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
       "each id must be a UUID"
     ]
   },
-  "requestId": "caa286f9-5ff2-4ba3-be50-e67012adc4af"
+  "requestId": "e34be424-b4ea-43b9-b057-eb23bfe25069"
 }
 ```
 </details>
@@ -2820,7 +2793,7 @@ curl -s -X POST -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/
 curl -s -X DELETE -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/error-logs/00000000-0000-4000-8000-000000000000"
 ```
 
-**Test Result:** ✅ PASS — Status: `404` — Latency: `34ms`
+**Test Result:** ✅ PASS — Status: `404` — Latency: `36ms`
 
 <details><summary>Response sample</summary>
 
@@ -2831,8 +2804,736 @@ curl -s -X DELETE -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:401
     "code": "NOT_FOUND",
     "message": "Error log not found"
   },
-  "requestId": "84826f55-5ca1-4c02-96c9-b96b2a25cf41"
+  "requestId": "b0aee7a4-b8d8-4d28-97b2-4e5c3b4a94d0"
 }
+```
+</details>
+
+---
+
+## Audit Logs
+
+### Audit Logs Summary
+
+**Purpose:** Per-service calls / failed / failure rate / avg + p50 + p95 duration, top 20 APIs, top 20 users, breakdowns, daily trend (default: last 7 days, pings excluded).
+
+**Inputs:** Query: from, to, since_hours, user, service, status, exclude_pings …
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs/summary"
+```
+
+**Test Result:** ✅ PASS — Status: `200` — Latency: `76ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": true,
+  "data": {
+    "timezone": "Asia/Kolkata",
+    "generated_at": "2026-10-08T11:59:59.721Z",
+    "generated_at_ist": {
+      "iso": "2026-10-08T17:29:59+05:30",
+      "date": "08 Oct 2026",
+      "time": "05:29 PM",
+      "time24": "17:29",
+      "weekday": "Thu",
+      "display": "Thu, 08 Oct 2026, 05:29 PM IST",
+      "timezone": "Asia/Kolkata",
+      "utc": "2026-10-08T11:59:59.721Z",
+      "epoch_ms": 1791460799721
+    },
+    "period": {
+      "from": "2026-10-01T11:59:59.721Z",
+      "from_ist": {
+        "iso": "2026-10-01T17:29:59+05:30",
+        "date": "01 Oct 2026",
+        "time": "05:29 PM",
+        "time24": "17:29",
+        "weekday": "Thu",
+        "display": "Thu, 01 Oct 2026, 05:29 PM IST",
+        "timezone": "Asia/Kolkata",
+        "utc": "2026-10-01T11:59:59.721Z",
+        "epoch_ms": 1790855999721
+      },
+      "to": null,
+      "to_ist": null,
+      "since_hours": null
+    },
+    "filters": {
+      "from": "2026-10-01T11:59:59.721Z",
+      "from_ist": {
+        "iso": "2026-10-01T17:29:59+05:30",
+        "date": "01 Oct 2026",
+        "time": "05:29 PM",
+        "time24": "17:29",
+        "weekday": "Thu",
+        "display": "Thu, 01 Oct 2026, 05:29 PM IST",
+        "timezone": "Asia/Kolkata",
+        "utc": "2026-10-01T11:59:59.721Z",
+        "epoch_ms": 1790855999721
+      },
+      "to": null,
+      "to_ist": null,
+      "to_bound": null,
+      "since_hours": null,
+      "user": null,
+      "user_resolved": null,
+      "service": "all",
+      "environment": "all",
+      "status": "all",
+      "method": "all",
+      "endpoint": null,
+      "route": null,
+      "resource_type": "all",
+      "action": "all",
+      "request_id": null,
+      "error_log_id": null,
+      "error_type": null,
+      "status_code": "all",
+      "status_class": null,
+      "q": null,
+      "exclude_pings": true,
+      "kind": "all",
+      "min_duration_ms": null,
+      "timezone": "Asia/Kolkata"
+    },
+    "totals": {
+      "calls": 268,
+      "succeeded": 218,
+      "failed": 50,
+      "failure_r
+... (truncated)
+```
+</details>
+
+### Audit Logs Meta
+
+**Purpose:** Distinct services, resource types, actions, HTTP methods, error types for filter dropdowns + defaults/limits.
+
+**Inputs:** Headers: Authorization
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs/meta"
+```
+
+**Test Result:** ✅ PASS — Status: `200` — Latency: `35ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": true,
+  "data": {
+    "timezone": "Asia/Kolkata",
+    "vocab": {
+      "statuses": [
+        "SUCCESS",
+        "FAILED"
+      ],
+      "actions": [
+        "VIEW",
+        "CREATE",
+        "UPDATE",
+        "DELETE"
+      ],
+      "kinds": [
+        "request",
+        "job",
+        "browser"
+      ],
+      "status_classes": [
+        "2xx",
+        "3xx",
+        "4xx",
+        "5xx"
+      ]
+    },
+    "used": {
+      "services": [
+        {
+          "value": "authservice",
+          "count": 166
+        },
+        {
+          "value": "gateway-service",
+          "count": 111
+        },
+        {
+          "value": "agentic-document-service",
+          "count": 109
+        },
+        {
+          "value": "payment-service",
+          "count": 60
+        }
+      ],
+      "environments": [
+        {
+          "value": "development",
+          "count": 446
+        }
+      ],
+      "resource_types": [
+        {
+          "value": "STORAGE FOLDER",
+          "count": 89
+        },
+        {
+          "value": "USER",
+          "count": 63
+        },
+        {
+          "value": "CASE",
+          "count": 10
+        },
+        {
+          "value": "CHAT",
+          "count": 3
+        },
+        {
+          "value": "FILE",
+          "count": 2
+        },
+        {
+          "value": "PLAN",
+          "count": 2
+        }
+      ],
+      "actions": [
+        {
+          "value": "CREATE",
+          "count": 162
+        },
+        {
+          "value": "VIEW",
+          "count": 141
+        },
+        {
+          "value": "UPDATE",
+          "count": 4
+        }
+      ],
+      "http_methods": [
+        {
+          "value": "GET",
+          "count": 231
+        },
+        {
+          "value": "POST",
+          "count": 207
+        },
+        {
+          "value": "PUT",
+          "count": 8
+        }
+      ],
+      "statuses": [
+        {
+          "value": "SUCCESS",
+          "count": 396
+        },
+        {
+          "value": "FAILED",
+          "count": 50
+        }
+      ],
+      "error_types": [
+   
+... (truncated)
+```
+</details>
+
+### Audit Logs List
+
+**Purpose:** Paginated API-call list (last 7 days by default, activity pings hidden, newest first). Never includes stack_trace.
+
+**Inputs:** Query: page, page_size (+ filters)
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs?page=1&page_size=20"
+```
+
+**Test Result:** ✅ PASS — Status: `200` — Latency: `107ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      {
+        "id": "3fc36724-cda3-4902-9a9f-fe6fbc6b9e21",
+        "created_at": "2026-10-08T11:36:31.396Z",
+        "created_at_ist": {
+          "iso": "2026-10-08T17:06:31+05:30",
+          "date": "08 Oct 2026",
+          "time": "05:06 PM",
+          "time24": "17:06",
+          "weekday": "Thu",
+          "display": "Thu, 08 Oct 2026, 05:06 PM IST",
+          "timezone": "Asia/Kolkata",
+          "utc": "2026-10-08T11:36:31.396Z",
+          "epoch_ms": 1791459391396
+        },
+        "occurred_ago": "23m",
+        "service_name": "agentic-document-service",
+        "environment": "development",
+        "request_id": "26fb137583f94f5884895cd519e2f406",
+        "user_id": "75",
+        "user_email": "sk@gmail.com",
+        "user_email_source": "logged",
+        "user_name": "sk",
+        "user_key": "75",
+        "user": {
+          "id": 75,
+          "email": "sk@gmail.com",
+          "username": "sk",
+          "role": "user",
+          "account_type": "SOLO",
+          "approval_status": "APPROVED",
+          "is_blocked": false,
+          "is_active": true,
+          "active_plan_name": "Pro",
+          "last_seen_at": "2026-10-08T11:46:44.307Z",
+          "last_seen_at_ist": {
+            "iso": "2026-10-08T17:16:44+05:30",
+            "date": "08 Oct 2026",
+            "time": "05:16 PM",
+            "time24": "17:16",
+            "weekday": "Thu",
+            "display": "Thu, 08 Oct 2026, 05:16 PM IST",
+            "timezone": "Asia/Kolkata",
+            "utc": "2026-10-08T11:46:44.307Z",
+            "epoch_ms": 1791460004307
+          },
+          "registered_at": "2026-05-18T06:12:19.363Z"
+        },
+        "ip_address": "127.0.0.1",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+        "kind": "request",
+        "http_method": "GET",
+        "endpoint": "/api/memory/cases/Kisan_s_o_Bansi_Salampure_vs_Union_of_India___Others/turns/10e1c090-8120-43c2-9306-ca17
+... (truncated)
+```
+</details>
+
+### Audit Logs List (pings included)
+
+**Purpose:** exclude_pings=false brings /api/auth/activity/ping rows back; total must be >= the default total.
+
+**Inputs:** Query: exclude_pings=false
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs?exclude_pings=false&page_size=100"
+```
+
+**Test Result:** ✅ PASS — Status: `200` — Latency: `148ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      {
+        "id": "3d470fdf-9466-490d-b3b5-5e60fdabd870",
+        "created_at": "2026-10-08T11:48:22.303Z",
+        "created_at_ist": {
+          "iso": "2026-10-08T17:18:22+05:30",
+          "date": "08 Oct 2026",
+          "time": "05:18 PM",
+          "time24": "17:18",
+          "weekday": "Thu",
+          "display": "Thu, 08 Oct 2026, 05:18 PM IST",
+          "timezone": "Asia/Kolkata",
+          "utc": "2026-10-08T11:48:22.303Z",
+          "epoch_ms": 1791460102303
+        },
+        "occurred_ago": "11m",
+        "service_name": "gateway-service",
+        "environment": "development",
+        "request_id": "e6f2f20897103995e9ca27b1deb5ce86",
+        "user_id": "76",
+        "user_email": "pk@gmail.com",
+        "user_email_source": "logged",
+        "user_name": "PK",
+        "user_key": "76",
+        "user": {
+          "id": 76,
+          "email": "pk@gmail.com",
+          "username": "PK",
+          "role": "user",
+          "account_type": "SOLO",
+          "approval_status": "APPROVED",
+          "is_blocked": false,
+          "is_active": true,
+          "active_plan_name": null,
+          "last_seen_at": "2026-10-08T11:48:05.703Z",
+          "last_seen_at_ist": {
+            "iso": "2026-10-08T17:18:05+05:30",
+            "date": "08 Oct 2026",
+            "time": "05:18 PM",
+            "time24": "17:18",
+            "weekday": "Thu",
+            "display": "Thu, 08 Oct 2026, 05:18 PM IST",
+            "timezone": "Asia/Kolkata",
+            "utc": "2026-10-08T11:48:05.703Z",
+            "epoch_ms": 1791460085703
+          },
+          "registered_at": "2026-05-18T06:47:13.500Z"
+        },
+        "ip_address": "::1",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+        "kind": "request",
+        "http_method": "POST",
+        "endpoint": "/api/auth/activity/ping",
+        "route": null,
+        "api": "POST /api/auth/activity/ping",
+        "action": "CREAT
+... (truncated)
+```
+</details>
+
+### Audit Logs List (FAILED only)
+
+**Purpose:** status=FAILED returns only failed calls; these carry error_type / user_message / error_log_id.
+
+**Inputs:** Query: status=FAILED
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs?status=FAILED&page_size=50"
+```
+
+**Test Result:** ✅ PASS — Status: `200` — Latency: `109ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      {
+        "id": "04ed84e7-ddf2-4660-88e7-36a379932efc",
+        "created_at": "2026-10-08T11:33:28.742Z",
+        "created_at_ist": {
+          "iso": "2026-10-08T17:03:28+05:30",
+          "date": "08 Oct 2026",
+          "time": "05:03 PM",
+          "time24": "17:03",
+          "weekday": "Thu",
+          "display": "Thu, 08 Oct 2026, 05:03 PM IST",
+          "timezone": "Asia/Kolkata",
+          "utc": "2026-10-08T11:33:28.742Z",
+          "epoch_ms": 1791459208742
+        },
+        "occurred_ago": "26m",
+        "service_name": "agentic-document-service",
+        "environment": "development",
+        "request_id": "77471cffdda34e239633c4cb6852b423",
+        "user_id": "76",
+        "user_email": "pk@gmail.com",
+        "user_email_source": "logged",
+        "user_name": "PK",
+        "user_key": "76",
+        "user": {
+          "id": 76,
+          "email": "pk@gmail.com",
+          "username": "PK",
+          "role": "user",
+          "account_type": "SOLO",
+          "approval_status": "APPROVED",
+          "is_blocked": false,
+          "is_active": true,
+          "active_plan_name": null,
+          "last_seen_at": "2026-10-08T11:48:05.703Z",
+          "last_seen_at_ist": {
+            "iso": "2026-10-08T17:18:05+05:30",
+            "date": "08 Oct 2026",
+            "time": "05:18 PM",
+            "time24": "17:18",
+            "weekday": "Thu",
+            "display": "Thu, 08 Oct 2026, 05:18 PM IST",
+            "timezone": "Asia/Kolkata",
+            "utc": "2026-10-08T11:48:05.703Z",
+            "epoch_ms": 1791460085703
+          },
+          "registered_at": "2026-05-18T06:47:13.500Z"
+        },
+        "ip_address": "127.0.0.1",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+        "kind": "request",
+        "http_method": "POST",
+        "endpoint": "/api/files/Krishnaji_Atmaram_Anandwade_vs_Onkar_Sakhar_Karkhana_Pvt._Ltd./intelligent-chat/stream",
+     
+... (truncated)
+```
+</details>
+
+### Audit Logs List (user filter)
+
+**Purpose:** user=<email or id> narrows to one platform user (ILIKE on email, exact on id, resolved through the Auth DB).
+
+**Inputs:** Query: user=sk@gmail.com
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs?user=sk%40gmail.com&page_size=50"
+```
+
+**Test Result:** ✅ PASS — Status: `200` — Latency: `153ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      {
+        "id": "3fc36724-cda3-4902-9a9f-fe6fbc6b9e21",
+        "created_at": "2026-10-08T11:36:31.396Z",
+        "created_at_ist": {
+          "iso": "2026-10-08T17:06:31+05:30",
+          "date": "08 Oct 2026",
+          "time": "05:06 PM",
+          "time24": "17:06",
+          "weekday": "Thu",
+          "display": "Thu, 08 Oct 2026, 05:06 PM IST",
+          "timezone": "Asia/Kolkata",
+          "utc": "2026-10-08T11:36:31.396Z",
+          "epoch_ms": 1791459391396
+        },
+        "occurred_ago": "23m",
+        "service_name": "agentic-document-service",
+        "environment": "development",
+        "request_id": "26fb137583f94f5884895cd519e2f406",
+        "user_id": "75",
+        "user_email": "sk@gmail.com",
+        "user_email_source": "logged",
+        "user_name": "sk",
+        "user_key": "75",
+        "user": {
+          "id": 75,
+          "email": "sk@gmail.com",
+          "username": "sk",
+          "role": "user",
+          "account_type": "SOLO",
+          "approval_status": "APPROVED",
+          "is_blocked": false,
+          "is_active": true,
+          "active_plan_name": "Pro",
+          "last_seen_at": "2026-10-08T11:46:44.307Z",
+          "last_seen_at_ist": {
+            "iso": "2026-10-08T17:16:44+05:30",
+            "date": "08 Oct 2026",
+            "time": "05:16 PM",
+            "time24": "17:16",
+            "weekday": "Thu",
+            "display": "Thu, 08 Oct 2026, 05:16 PM IST",
+            "timezone": "Asia/Kolkata",
+            "utc": "2026-10-08T11:46:44.307Z",
+            "epoch_ms": 1791460004307
+          },
+          "registered_at": "2026-05-18T06:12:19.363Z"
+        },
+        "ip_address": "127.0.0.1",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+        "kind": "request",
+        "http_method": "GET",
+        "endpoint": "/api/memory/cases/Kisan_s_o_Bansi_Salampure_vs_Union_of_India___Others/turns/10e1c090-8120-43c2-9306-ca17
+... (truncated)
+```
+</details>
+
+### Audit Logs List (INVALID — expect 400)
+
+**Purpose:** status must be SUCCESS | FAILED; from/to must be YYYY-MM-DD or ISO date-time.
+
+**Inputs:** Query: status=NOPE&from=yesterday
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs?status=NOPE&from=yesterday"
+```
+
+**Test Result:** ✅ PASS — Status: `400` — Latency: `2ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid query parameters",
+    "details": [
+      "\"status\" must be one of [SUCCESS, FAILED, ALL, ]"
+    ]
+  },
+  "requestId": "69d2401a-f6c1-4b58-9181-e7f60968fe40"
+}
+```
+</details>
+
+### Audit Logs CSV Export
+
+**Purpose:** CSV with the same filters as the list (UTF-8 BOM, IST columns), max 50 000 rows.
+
+**Inputs:** Query: same as list
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs/export?status=FAILED&exclude_pings=false"
+```
+
+**Test Result:** ✅ PASS — Status: `200` — Latency: `114ms`
+
+<details><summary>Response sample</summary>
+
+```json
+ID,Timestamp (IST),Date (IST),Time (IST),User email,User id,User name,Service,Environment,Action,Resource type,Resource id,Method (handler),HTTP method,Endpoint,Route,Kind,Status,Code,Duration (ms),IP address,User agent,Request id,Error type,Error message,User message,Error log id,Timestamp (UTC)
+04ed84e7-ddf2-4660-88e7-36a379932efc,"Thu, 08 Oct 2026, 05:03 PM IST",2026-10-08,17:03,pk@gmail.com,76,PK,agentic-document-service,development,CREATE,STORAGE FOLDER,,FolderService.create_stream,POST,/api/files/Krishnaji_Atmaram_Anandwade_vs_Onkar_Sakhar_Karkhana_Pvt._Ltd./intelligent-chat/stream,,req
+```
+</details>
+
+### Audit Log Detail (INVALID id — expect 400)
+
+**Purpose:** Row ids are UUIDs.
+
+**Inputs:** Path: id
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs/not-a-uuid"
+```
+
+**Test Result:** ✅ PASS — Status: `400` — Latency: `2ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Audit log id must be a UUID"
+  },
+  "requestId": "2bc1d8bc-39b6-4876-b82f-f0ef7c79ac3e"
+}
+```
+</details>
+
+### Audit Log Detail (UNKNOWN id — expect 404)
+
+**Purpose:** Unknown UUID returns NOT_FOUND.
+
+**Inputs:** Path: id
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs/00000000-0000-4000-8000-000000000000"
+```
+
+**Test Result:** ✅ PASS — Status: `404` — Latency: `38ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Audit log not found"
+  },
+  "requestId": "55367a34-4a8f-4115-96f7-4bee7db543ee"
+}
+```
+</details>
+
+### Audit Log Detail
+
+**Purpose:** Full row incl. stack_trace and payload, plus the linked error_logs row(s) (error_log_id / payload.error_log_ids) with their stack traces.
+
+**Inputs:** Path: id (UUID)
+
+**Example curl:**
+```bash
+curl -s -X GET -H "Authorization: Bearer <ADMIN_TOKEN>" "http://localhost:4010/api/admin/audit-logs/04ed84e7-ddf2-4660-88e7-36a379932efc"
+```
+
+**Test Result:** ✅ PASS — Status: `200` — Latency: `114ms`
+
+<details><summary>Response sample</summary>
+
+```json
+{
+  "success": true,
+  "data": {
+    "audit": {
+      "id": "04ed84e7-ddf2-4660-88e7-36a379932efc",
+      "created_at": "2026-10-08T11:33:28.742Z",
+      "created_at_ist": {
+        "iso": "2026-10-08T17:03:28+05:30",
+        "date": "08 Oct 2026",
+        "time": "05:03 PM",
+        "time24": "17:03",
+        "weekday": "Thu",
+        "display": "Thu, 08 Oct 2026, 05:03 PM IST",
+        "timezone": "Asia/Kolkata",
+        "utc": "2026-10-08T11:33:28.742Z",
+        "epoch_ms": 1791459208742
+      },
+      "occurred_ago": "26m",
+      "service_name": "agentic-document-service",
+      "environment": "development",
+      "request_id": "77471cffdda34e239633c4cb6852b423",
+      "user_id": "76",
+      "user_email": "pk@gmail.com",
+      "user_email_source": "logged",
+      "user_name": "PK",
+      "user_key": "76",
+      "user": {
+        "id": 76,
+        "email": "pk@gmail.com",
+        "username": "PK",
+        "role": "user",
+        "account_type": "SOLO",
+        "approval_status": "APPROVED",
+        "is_blocked": false,
+        "is_active": true,
+        "active_plan_name": null,
+        "last_seen_at": "2026-10-08T11:48:05.703Z",
+        "last_seen_at_ist": {
+          "iso": "2026-10-08T17:18:05+05:30",
+          "date": "08 Oct 2026",
+          "time": "05:18 PM",
+          "time24": "17:18",
+          "weekday": "Thu",
+          "display": "Thu, 08 Oct 2026, 05:18 PM IST",
+          "timezone": "Asia/Kolkata",
+          "utc": "2026-10-08T11:48:05.703Z",
+          "epoch_ms": 1791460085703
+        },
+        "registered_at": "2026-05-18T06:47:13.500Z"
+      },
+      "ip_address": "127.0.0.1",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+      "kind": "request",
+      "http_method": "POST",
+      "endpoint": "/api/files/Krishnaji_Atmaram_Anandwade_vs_Onkar_Sakhar_Karkhana_Pvt._Ltd./intelligent-chat/stream",
+      "route": null,
+      "api": "POST /api/files/Krishnaji_Atmaram_Anandwade_vs_Onkar_Sakhar_Karkhana_Pvt._Ltd./
+... (truncated)
 ```
 </details>
 

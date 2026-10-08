@@ -67,6 +67,7 @@ const publicNewsletterRoutes = require('./routes/publicNewsletterRoutes');
 const marketingPromoRoutes = require('./routes/marketingPromoRoutes');
 const publicPromoRoutes = require('./routes/publicPromoRoutes');
 const errorLogRoutes = require('./routes/errorLogRoutes');
+const auditLogRoutes = require('./routes/auditLogRoutes');
 const { ensureContactEnquirySchema } = require('./services/contactEnquiryService');
 const { ensureNewsletterSubscriberSchema } = require('./services/newsletterSubscriberService');
 const { ensureMarketingPromoSchema } = require('./services/marketingPromoService');
@@ -251,6 +252,8 @@ app.use('/api/admin/promos', marketingPromoRoutes(pool));
 
 console.log('📌 /api/admin/error-logs → Platform error logs (Document_DB error_logs; owned by agentic-document-service)');
 app.use('/api/admin/error-logs', errorLogRoutes(pool, docPool));
+console.log('📌 /api/admin/audit-logs → Activity & Error Logs (Document_DB api_audit_logs; one row per API call, owned by agentic-document-service)');
+app.use('/api/admin/audit-logs', auditLogRoutes(pool, docPool));
 
 console.log('🎙️  /admin/jurinex-voice → Voice agent management + KB (jurinex-voice-docs bucket)');
 app.use('/admin/jurinex-voice', jurinexVoiceRoutes(pool));

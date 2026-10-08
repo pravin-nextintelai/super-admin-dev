@@ -1,4 +1,4 @@
-# Error Logs API — `/api/admin/error-logs`
+# Error Logs API — `/api/admin/error-logs` and `/api/admin/audit-logs`
 
 Admin API for the platform-wide error log: every error a user hit in any backend service
 (Python or Node), stored in **one shared table** and viewable, filterable, resolvable and
@@ -6,10 +6,16 @@ exportable from the super-admin backend.
 
 All examples below were captured from a live run of the backend on 2026-10-08.
 
+Two tables, two APIs: **`error_logs`** (sections 1–6, one row per error, resolvable) and
+**`api_audit_logs`** (section 7, one row per API call with the error on the same row when it failed).
+
 - Code: [Backend/routes/errorLogRoutes.js](../Backend/routes/errorLogRoutes.js),
   [Backend/controllers/errorLogController.js](../Backend/controllers/errorLogController.js),
   [Backend/services/errorLogService.js](../Backend/services/errorLogService.js)
-- Tests: `npm run test:admin-api` → group **I) Error Logs** (21 cases) in
+- Audit logs: [Backend/routes/auditLogRoutes.js](../Backend/routes/auditLogRoutes.js),
+  [Backend/controllers/auditLogController.js](../Backend/controllers/auditLogController.js),
+  [Backend/services/auditLogService.js](../Backend/services/auditLogService.js)
+- Tests: `npm run test:admin-api` → groups **I) Error Logs** (23 cases) and **J) Activity & Error Logs** (11 cases) in
   [Backend/tests/run_admin_api_tests.js](../Backend/tests/run_admin_api_tests.js)
 
 ---
@@ -1429,3 +1435,377 @@ ADMIN_TOKEN=<token> BASE_URL=http://localhost:4000 npm run test:admin-api
 Group **I) Error Logs** runs 21 cases (stats, meta, list + filters + validation, users, issues, export,
 detail + 400/404, resolve, reopen, bulk resolve by ids and by fingerprint, bulk-validation, delete 404) and
 restores any row it touched. The report is written to `Backend/api_test_report.md`.
+
+---
+
+## 7. Activity & Error Logs — `/api/admin/audit-logs` (`api_audit_logs`)
+
+One row per API call across every backend service, plus one row per error that happened outside a
+request (background jobs, process crashes, browser-side errors, cancelled / failed payments).
+Successful calls have empty error columns; failed ones carry the error on the same row and link to
+`error_logs` through `error_log_id` (several ids in `payload.error_log_ids` when one request stored
+more than one error).
+
+| | |
+|---|---|
+| Database / table | **Document_DB** → `public.api_audit_logs` (same docPool as `error_logs`) |
+| Owner | agentic-document-service (migrations 184, 185, 186). This backend **only reads** the table. Missing table → `503 AUDIT_LOGS_TABLE_MISSING`. |
+| Auth / roles | Same as error logs: `Authorization: Bearer <ADMIN_TOKEN or dashboard JWT>`; `super-admin`, `admin`. Read-only — there is no resolve or delete. |
+| Default window | When neither `from` nor `since_hours` is given, the **last 7 days**. |
+| Pings | `/api/auth/activity/ping` rows are hidden by default (`exclude_pings=true`); pass `exclude_pings=false` to see them. |
+| Retention | Rows older than `ERROR_LOG_AUDIT_RETENTION_DAYS` (90) are deleted daily by the owner. |
+| `stack_trace` | Returned **only** by `GET /:id`. The list and the CSV never include it. |
+
+### 7.1 Endpoint index
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/admin/audit-logs/summary` | Per-service calls / failed / failure rate / avg + p50 + p95 duration, top 20 APIs, top 20 users, breakdowns, daily trend |
+| GET | `/api/admin/audit-logs/meta` | Distinct services, resource types, actions, HTTP methods, error types + defaults / limits |
+| GET | `/api/admin/audit-logs` | Paginated list, newest first |
+| GET | `/api/admin/audit-logs/export` | CSV of the same list, max 50 000 rows |
+| GET | `/api/admin/audit-logs/:id` | Full row incl. `stack_trace` + the linked `error_logs` row(s) |
+
+### 7.2 The audit row object
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | uuid | Row id |
+| `created_at`, `created_at_ist`, `occurred_ago` | timestamp | When the request finished |
+| `service_name`, `environment` | string | Which service answered |
+| `request_id` | string\|null | The `x-request-id` the client received — same id on that request's `error_logs` rows |
+| `user_id`, `user_email`, `user_email_source`, `user_name`, `user_key`, `user` | | Who, as in error logs: recorded values, with email / name filled from the Auth DB when only the id was logged; `user` is the enriched Auth-DB account or `null` (unauthenticated / service-to-service calls) |
+| `ip_address`, `user_agent` | string\|null | Client |
+| `kind` | string | `request` (normal API call) · `browser` (frontend report, endpoint `client:<flow>`) · `job` (`job:` / `cron:` / `process:` endpoints or no HTTP method) |
+| `http_method`, `endpoint`, `route`, `api` | | The API: verb, actual path, route template (`/api/files/{folder_name}/upload`), and `"<verb> <path>"` for display |
+| `action` | string\|null | `VIEW` / `CREATE` / `UPDATE` / `DELETE` (from the verb) |
+| `resource_type`, `resource_id` | string\|null | `STORAGE FOLDER`, `CASE`, `FILE`, `USER`, `CHAT`, `PLAN`, … and the id when a `*_id` / `*_name` path param exists |
+| `method` | string\|null | Handler shown in the admin console, e.g. `FolderService.list_folders` (not the HTTP verb) |
+| `status`, `failed` | string, bool | `SUCCESS` or `FAILED` (4xx / 5xx, or an error row was written) |
+| `status_code`, `status_class` | int\|null | HTTP status and `2xx` / `4xx` / `5xx` |
+| `duration_ms`, `duration_display` | int\|null | How long the call took |
+| `streaming` | bool | `payload.streaming` — the response was a stream |
+| `error_log_id`, `error_log_ids` | uuid\|null, uuid[] | Link(s) to `error_logs` for a failed call (`[]` on success) |
+| `error_type`, `error_message`, `user_message` | string\|null | The failure (exact internal error, and what the user saw); all `null` on success |
+| `has_stack_trace` | bool | Whether `stack_trace` exists; the text itself is **detail only** |
+| `stack_trace` | string\|null | **detail only** |
+| `source`, `category`, `severity`, `external_provider` | string\|null | Classification the services may put in `payload` (`HTTP` / `JOB` / `PROCESS` / `EXTERNAL_API`, …); `null` when absent |
+| `payload` | object\|null | Raw metadata: `method`, `streaming`, `error_log_ids`, … |
+| `timezone` | string | `Asia/Kolkata` |
+
+### 7.3 Filters (list, export, summary)
+
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `from`, `to` | `YYYY-MM-DD` or ISO date-time | last 7 days · now | A plain date is an **IST calendar day** (`to` inclusive: the bound becomes the next day's start, echoed as `to_bound: "exclusive"`); an ISO date-time is used as-is (`to` inclusive) |
+| `since_hours` | int 1–8784 | — | Rolling window; overrides `from` |
+| `user` | string | — | email (contains, case-insensitive) or user id (exact); also resolved through the Auth DB, so an id finds rows that logged only the email and vice versa; echoed as `user_resolved` |
+| `service` | csv | all | `service_name` values |
+| `environment` | csv | all | |
+| `status` | `SUCCESS` · `FAILED` · `ALL` | all | |
+| `method` | csv | all | HTTP verbs, e.g. `POST,PUT` |
+| `endpoint` | string | — | **prefix** match, case-insensitive (`/api/files`) |
+| `route` | string | — | contains match on the route template (falls back to the path) |
+| `resource_type` | csv | all | e.g. `STORAGE FOLDER,CASE` (case-insensitive) |
+| `action` | csv | all | `VIEW,CREATE,UPDATE,DELETE` |
+| `request_id` | string | — | exact — every row of one request across services |
+| `error_log_id` | uuid | — | the audit row(s) that produced one error |
+| `error_type` | string | — | exact, case-insensitive |
+| `status_code` | csv int | all | `401,404` |
+| `status_class` | `2xx` · `3xx` · `4xx` · `5xx` | — | |
+| `q` | string ≤ 200 | — | contains, case-insensitive, across endpoint, route, method, error_type, error_message, user_message, user_email, request_id, resource_id |
+| `exclude_pings` | bool | `true` | hide `/api/auth/activity/ping` |
+| `kind` | `request` · `browser` · `job` · `all` | all | |
+| `min_duration_ms` | int | — | slow calls only |
+| `page`, `page_size` (alias `limit`) | int | `1`, `50` | max 200 (list / export only) |
+| `sort` | string | `newest` | `newest` · `oldest` · `slowest` · `status` (failed first) · `service` · `user` (list / export only) |
+
+Every response echoes the applied filters under `data.filters` (including the resolved `from` / `to` in UTC and IST).
+
+### 7.4 `GET /api/admin/audit-logs/summary`
+
+**Request**
+
+```bash
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:4000/api/admin/audit-logs/summary?from=2026-10-08&to=2026-10-08"
+```
+
+**Response `200`** (shape captured from a live run; arrays trimmed, counts illustrative)
+
+```json
+{
+  "success": true,
+  "data": {
+    "timezone": "Asia/Kolkata",
+    "generated_at": "2026-10-08T11:56:40.000Z",
+    "generated_at_ist": { "iso": "2026-10-08T17:26:40+05:30", "date": "08 Oct 2026", "time": "05:26 PM", "time24": "17:26", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 05:26 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T11:56:40.000Z", "epoch_ms": 1791460600000 },
+    "period": {
+      "from": "2026-10-07T18:30:00.000Z",
+      "from_ist": { "iso": "2026-10-08T00:00:00+05:30", "date": "08 Oct 2026", "time": "12:00 AM", "time24": "00:00", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 12:00 AM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-07T18:30:00.000Z", "epoch_ms": 1791397800000 },
+      "to": "2026-10-08T18:30:00.000Z",
+      "to_ist": { "iso": "2026-10-09T00:00:00+05:30", "date": "09 Oct 2026", "time": "12:00 AM", "time24": "00:00", "weekday": "Fri", "display": "Fri, 09 Oct 2026, 12:00 AM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T18:30:00.000Z", "epoch_ms": 1791484200000 },
+      "since_hours": null
+    },
+    "filters": { "from": "2026-10-07T18:30:00.000Z", "to": "2026-10-08T18:30:00.000Z", "to_bound": "exclusive", "user": null, "user_resolved": null, "service": "all", "status": "all", "exclude_pings": true, "kind": "all", "q": null, "timezone": "Asia/Kolkata" },
+    "totals": {
+      "calls": 268,
+      "succeeded": 218,
+      "failed": 50,
+      "failure_rate_pct": 18.7,
+      "http_4xx": 48,
+      "http_5xx": 2,
+      "distinct_users": 2,
+      "users_with_failures": 2,
+      "services": 4,
+      "distinct_apis": 31,
+      "browser": 0,
+      "jobs": 0,
+      "avg_ms": 1240,
+      "p50_ms": 224,
+      "p95_ms": 2613,
+      "max_ms": 9120,
+      "first_call_at": "2026-10-08T10:17:38.427Z",
+      "first_call_at_ist": { "iso": "2026-10-08T15:47:38+05:30", "date": "08 Oct 2026", "time": "03:47 PM", "time24": "15:47", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 03:47 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T10:17:38.427Z", "epoch_ms": 1791454658427 },
+      "last_call_at": "2026-10-08T11:36:31.396Z",
+      "last_call_at_ist": { "iso": "2026-10-08T17:06:31+05:30", "date": "08 Oct 2026", "time": "05:06 PM", "time24": "17:06", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 05:06 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T11:36:31.396Z", "epoch_ms": 1791459391396 },
+      "most_used_api": { "service_name": "agentic-document-service", "http_method": "GET", "route": "/api/files/folders", "endpoint": "/api/files/folders", "calls": 20, "failed": 0 }
+    },
+    "per_service": [
+      { "service_name": "agentic-document-service", "calls": 109, "failed": 15, "avg_ms": 2729, "p50_ms": 1549, "p95_ms": 3685, "max_ms": 9120, "users": 2, "apis": 18, "last_call_at": "2026-10-08T11:36:31.396Z", "last_call_at_ist": { "iso": "2026-10-08T17:06:31+05:30", "date": "08 Oct 2026", "time": "05:06 PM", "time24": "17:06", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 05:06 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T11:36:31.396Z", "epoch_ms": 1791459391396 }, "failure_rate_pct": 13.8 },
+      { "service_name": "payment-service", "calls": 60, "failed": 17, "avg_ms": 248, "p50_ms": 192, "p95_ms": 369, "max_ms": 1180, "users": 2, "apis": 6, "last_call_at": "2026-10-08T11:33:28.733Z", "last_call_at_ist": { "iso": "2026-10-08T17:03:28+05:30", "date": "08 Oct 2026", "time": "05:03 PM", "time24": "17:03", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 05:03 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T11:33:28.733Z", "epoch_ms": 1791459208733 }, "failure_rate_pct": 28.3 }
+    ],
+    "top_endpoints": [
+      { "service_name": "agentic-document-service", "http_method": "GET", "route": "/api/files/folders", "endpoint": "/api/files/folders", "method": "FolderService.list_folders", "action": "VIEW", "resource_type": "STORAGE FOLDER", "calls": 20, "failed": 0, "avg_ms": 2214, "p50_ms": 2074, "users": 2, "last_call_at": "2026-10-08T11:31:49.233Z", "last_call_at_ist": { "iso": "2026-10-08T17:01:49+05:30", "date": "08 Oct 2026", "time": "05:01 PM", "time24": "17:01", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 05:01 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T11:31:49.233Z", "epoch_ms": 1791459109233 }, "failure_rate_pct": 0 }
+    ],
+    "top_users": [
+      { "user_key": "76", "user_id": "76", "user_email": "pk@gmail.com", "user_name": "PK", "user": { "id": 76, "email": "pk@gmail.com", "username": "PK", "role": "user", "account_type": "SOLO", "approval_status": "APPROVED", "is_blocked": false, "is_active": true, "active_plan_name": "Pro", "last_seen_at": "2026-10-08T11:46:44.307Z", "last_seen_at_ist": { "iso": "2026-10-08T17:16:44+05:30", "date": "08 Oct 2026", "time": "05:16 PM", "time24": "17:16", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 05:16 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T11:46:44.307Z", "epoch_ms": 1791460004307 }, "registered_at": "2026-05-18T06:12:19.363Z" }, "calls": 144, "failed": 36, "services": ["agentic-document-service", "authservice", "gateway-service", "payment-service"], "apis": 27, "avg_ms": 1310, "first_call_at": "2026-10-08T10:17:38.427Z", "first_call_at_ist": { "iso": "2026-10-08T15:47:38+05:30", "date": "08 Oct 2026", "time": "03:47 PM", "time24": "15:47", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 03:47 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T10:17:38.427Z", "epoch_ms": 1791454658427 }, "last_call_at": "2026-10-08T11:33:28.742Z", "last_call_at_ist": { "iso": "2026-10-08T17:03:28+05:30", "date": "08 Oct 2026", "time": "05:03 PM", "time24": "17:03", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 05:03 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T11:33:28.742Z", "epoch_ms": 1791459208742 }, "last_endpoint": "/api/files/Krishnaji_Atmaram_Anandwade_vs_Onkar_Sakhar_Karkhana_Pvt._Ltd./intelligent-chat/stream", "last_http_method": "POST", "failure_rate_pct": 25 }
+    ],
+    "by_action": [ { "value": "CREATE", "calls": 95, "failed": 20 }, { "value": "VIEW", "calls": 86, "failed": 14 }, { "value": "UNKNOWN", "calls": 83, "failed": 16 }, { "value": "UPDATE", "calls": 4, "failed": 0 } ],
+    "by_resource_type": [ { "value": "UNKNOWN", "calls": 147, "failed": 33 }, { "value": "STORAGE FOLDER", "calls": 89, "failed": 15 }, { "value": "USER", "calls": 18, "failed": 2 } ],
+    "by_status_code": [ { "value": 200, "calls": 210 }, { "value": 404, "calls": 31 }, { "value": 429, "calls": 12 }, { "value": 401, "calls": 5 } ],
+    "by_environment": [ { "value": "development", "calls": 268, "failed": 50 } ],
+    "daily_trend": [ { "date": "2026-10-08", "label": "08 Oct", "calls": 268, "failed": 50, "users": 2, "avg_ms": 1240 } ],
+    "slowest": [ { "comment": "up to 5 slowest calls in the period, each a full audit row object (7.2), no stack_trace" } ]
+  }
+}
+```
+
+`UNKNOWN` in `by_action` / `by_resource_type` means the service did not classify the call (`null` in the row).
+
+### 7.5 `GET /api/admin/audit-logs/meta`
+
+```json
+{
+  "success": true,
+  "data": {
+    "timezone": "Asia/Kolkata",
+    "vocab": { "statuses": ["SUCCESS", "FAILED"], "actions": ["VIEW", "CREATE", "UPDATE", "DELETE"], "kinds": ["request", "job", "browser"], "status_classes": ["2xx", "3xx", "4xx", "5xx"] },
+    "used": {
+      "services": [ { "value": "agentic-document-service", "count": 186 }, { "value": "authservice", "count": 149 }, { "value": "payment-service", "count": 70 }, { "value": "gateway-service", "count": 41 } ],
+      "environments": [ { "value": "development", "count": 446 } ],
+      "resource_types": [ { "value": "STORAGE FOLDER", "count": 89 }, { "value": "USER", "count": 63 }, { "value": "CASE", "count": 10 }, { "value": "CHAT", "count": 3 }, { "value": "FILE", "count": 1 }, { "value": "PLAN", "count": 2 } ],
+      "actions": [ { "value": "CREATE", "count": 162 }, { "value": "VIEW", "count": 139 }, { "value": "UPDATE", "count": 4 } ],
+      "http_methods": [ { "value": "POST", "count": 250 }, { "value": "GET", "count": 192 }, { "value": "PUT", "count": 4 } ],
+      "statuses": [ { "value": "SUCCESS", "count": 396 }, { "value": "FAILED", "count": 50 } ],
+      "error_types": [ { "value": "HttpErrorResponse405", "count": 1 } ],
+      "methods": [ { "value": "FolderService.list_folders", "count": 20 } ]
+    },
+    "sort_options": ["newest", "oldest", "slowest", "status", "service", "user"],
+    "defaults": { "page_size": 50, "window_hours": 168, "exclude_pings": true, "ping_endpoint": "/api/auth/activity/ping" },
+    "limits": { "max_page_size": 200, "max_export_rows": 50000 }
+  }
+}
+```
+
+### 7.6 `GET /api/admin/audit-logs` — list
+
+**Request — one user's failed calls today**
+
+```bash
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:4000/api/admin/audit-logs?user=pk@gmail.com&status=FAILED&from=2026-10-08&to=2026-10-08&page_size=20"
+```
+
+**Response `200`** (shape captured from a live run; one row shown)
+
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      {
+        "id": "04ed84e7-ddf2-4660-88e7-36a379932efc",
+        "created_at": "2026-10-08T11:33:28.742Z",
+        "created_at_ist": { "iso": "2026-10-08T17:03:28+05:30", "date": "08 Oct 2026", "time": "05:03 PM", "time24": "17:03", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 05:03 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T11:33:28.742Z", "epoch_ms": 1791459208742 },
+        "occurred_ago": "23m",
+        "service_name": "agentic-document-service",
+        "environment": "development",
+        "request_id": "3a2fd3c6c9ab4b0aa0a7a1c5b7f2e9d1",
+        "user_id": "76",
+        "user_email": "pk@gmail.com",
+        "user_email_source": "logged",
+        "user_name": "PK",
+        "user_key": "76",
+        "user": { "id": 76, "email": "pk@gmail.com", "username": "PK", "role": "user", "account_type": "SOLO", "approval_status": "APPROVED", "is_blocked": false, "is_active": true, "active_plan_name": "Pro", "last_seen_at": "2026-10-08T11:46:44.307Z", "last_seen_at_ist": { "iso": "2026-10-08T17:16:44+05:30", "date": "08 Oct 2026", "time": "05:16 PM", "time24": "17:16", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 05:16 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T11:46:44.307Z", "epoch_ms": 1791460004307 }, "registered_at": "2026-05-18T06:12:19.363Z" },
+        "ip_address": "127.0.0.1",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+        "kind": "request",
+        "http_method": "POST",
+        "endpoint": "/api/files/Krishnaji_Atmaram_Anandwade_vs_Onkar_Sakhar_Karkhana_Pvt._Ltd./intelligent-chat/stream",
+        "route": null,
+        "api": "POST /api/files/Krishnaji_Atmaram_Anandwade_vs_Onkar_Sakhar_Karkhana_Pvt._Ltd./intelligent-chat/stream",
+        "action": "CREATE",
+        "resource_type": "STORAGE FOLDER",
+        "resource_id": null,
+        "method": "FolderService.create_stream",
+        "status": "FAILED",
+        "failed": true,
+        "status_code": 429,
+        "status_class": "4xx",
+        "duration_ms": 2573,
+        "duration_display": "2,573 ms",
+        "streaming": false,
+        "error_log_id": "fa64507e-65c3-466f-bcc9-84ac39745fc3",
+        "error_log_ids": ["fa64507e-65c3-466f-bcc9-84ac39745fc3", "ca0ba4b7-523a-4579-9e3a-49d5425da5ce"],
+        "error_type": null,
+        "error_message": null,
+        "user_message": null,
+        "has_stack_trace": false,
+        "source": null,
+        "category": null,
+        "severity": null,
+        "external_provider": null,
+        "payload": { "method": "FolderService.create_stream", "error_log_ids": ["fa64507e-65c3-466f-bcc9-84ac39745fc3", "ca0ba4b7-523a-4579-9e3a-49d5425da5ce"] },
+        "timezone": "Asia/Kolkata"
+      }
+    ],
+    "total": 36,
+    "page": 1,
+    "page_size": 20,
+    "total_pages": 2,
+    "filters": {
+      "from": "2026-10-07T18:30:00.000Z",
+      "from_ist": { "iso": "2026-10-08T00:00:00+05:30", "date": "08 Oct 2026", "time": "12:00 AM", "time24": "00:00", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 12:00 AM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-07T18:30:00.000Z", "epoch_ms": 1791397800000 },
+      "to": "2026-10-08T18:30:00.000Z",
+      "to_ist": { "iso": "2026-10-09T00:00:00+05:30", "date": "09 Oct 2026", "time": "12:00 AM", "time24": "00:00", "weekday": "Fri", "display": "Fri, 09 Oct 2026, 12:00 AM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T18:30:00.000Z", "epoch_ms": 1791484200000 },
+      "to_bound": "exclusive",
+      "since_hours": null,
+      "user": "pk@gmail.com",
+      "user_resolved": { "id": 76, "email": "pk@gmail.com", "username": "PK" },
+      "service": "all", "environment": "all", "status": "FAILED", "method": "all",
+      "endpoint": null, "route": null, "resource_type": "all", "action": "all",
+      "request_id": null, "error_log_id": null, "error_type": null, "status_code": "all", "status_class": null,
+      "q": null, "exclude_pings": true, "kind": "all", "min_duration_ms": null,
+      "timezone": "Asia/Kolkata",
+      "sort": "newest"
+    },
+    "timezone": "Asia/Kolkata"
+  }
+}
+```
+
+A row can be `FAILED` with empty `error_type` / `error_message` when the service recorded the failure only in
+`error_logs` (follow `error_log_id`, or open the detail which returns the linked error). Useful queries:
+
+| Need | Query |
+|---|---|
+| What one user did today | `?user=<email or id>&from=<today>&to=<today>` |
+| Only failures, slowest first | `?status=FAILED&sort=slowest` |
+| Everything in one request across services | `?request_id=<id>&sort=oldest` |
+| One API's calls | `?endpoint=/api/files/folders` (prefix) or `?route=/api/files/{folder_name}` |
+| Activity pings included | `?exclude_pings=false` |
+| Browser-reported errors only | `?kind=browser` |
+| Calls slower than 2 s | `?min_duration_ms=2000&sort=slowest` |
+
+**Error `400`** — e.g. `?status=NOPE&from=yesterday`
+
+```json
+{ "success": false, "error": { "code": "VALIDATION_ERROR", "message": "Invalid query parameters", "details": ["\"status\" must be one of [SUCCESS, FAILED, ALL, ]"] }, "requestId": "…" }
+```
+
+(`from` is checked after the Joi pass; alone it yields `"from" must be YYYY-MM-DD (IST day) or an ISO date-time`.)
+
+### 7.7 `GET /api/admin/audit-logs/export`
+
+Same filters as the list (`page` / `page_size` ignored). At most **50 000** rows; `X-Total-Rows` / `X-Exported-Rows` say
+whether it was truncated. `Content-Disposition: attachment; filename="audit-logs-YYYY-MM-DD-HHMM-IST.csv"`.
+
+```
+ID,Timestamp (IST),Date (IST),Time (IST),User email,User id,User name,Service,Environment,Action,Resource type,Resource id,Method (handler),HTTP method,Endpoint,Route,Kind,Status,Code,Duration (ms),IP address,User agent,Request id,Error type,Error message,User message,Error log id,Timestamp (UTC)
+```
+
+### 7.8 `GET /api/admin/audit-logs/:id` — detail
+
+Full row (adds `stack_trace`) plus the linked `error_logs` row(s), each in the error-log detail shape (§2, with
+`stack_trace`, `payload`, `external.response`).
+
+**Request**
+
+```bash
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:4000/api/admin/audit-logs/04ed84e7-ddf2-4660-88e7-36a379932efc"
+```
+
+**Response `200`** (shape captured from a live run; nested rows trimmed to key fields)
+
+```json
+{
+  "success": true,
+  "data": {
+    "audit": {
+      "id": "04ed84e7-ddf2-4660-88e7-36a379932efc",
+      "status": "FAILED",
+      "status_code": 429,
+      "service_name": "agentic-document-service",
+      "api": "POST /api/files/Krishnaji_Atmaram_Anandwade_vs_Onkar_Sakhar_Karkhana_Pvt._Ltd./intelligent-chat/stream",
+      "method": "FolderService.create_stream",
+      "action": "CREATE",
+      "resource_type": "STORAGE FOLDER",
+      "user_email": "pk@gmail.com",
+      "user_name": "PK",
+      "duration_ms": 2573,
+      "error_log_id": "fa64507e-65c3-466f-bcc9-84ac39745fc3",
+      "error_log_ids": ["fa64507e-65c3-466f-bcc9-84ac39745fc3", "ca0ba4b7-523a-4579-9e3a-49d5425da5ce"],
+      "error_type": null,
+      "error_message": null,
+      "user_message": null,
+      "has_stack_trace": false,
+      "stack_trace": null,
+      "payload": { "method": "FolderService.create_stream", "error_log_ids": ["fa64507e-65c3-466f-bcc9-84ac39745fc3", "ca0ba4b7-523a-4579-9e3a-49d5425da5ce"] },
+      "comment": "…plus every other field of the row object (7.2)"
+    },
+    "error": {
+      "id": "fa64507e-65c3-466f-bcc9-84ac39745fc3",
+      "service_name": "agentic-document-service",
+      "source": "EXTERNAL_API",
+      "category": "EXTERNAL_API",
+      "severity": "WARNING",
+      "error_type": "HttpStatus401",
+      "error_message": "PAYMENT call failed (HTTP 401)",
+      "external": { "provider": "PAYMENT", "endpoint": "http://localhost:5002/api/user-resources/internal/token-check", "model": null, "status_code": 401, "error_code": null, "has_response": true, "response": "{\"error\":\"Authentication token required\"}" },
+      "stack_trace": null,
+      "comment": "…the linked error_logs row in the error-log detail shape (§2)"
+    },
+    "errors": [
+      { "id": "fa64507e-65c3-466f-bcc9-84ac39745fc3", "comment": "same as `error`" },
+      { "id": "ca0ba4b7-523a-4579-9e3a-49d5425da5ce", "error_type": "HttpErrorResponse429", "comment": "second error stored for the same request" }
+    ],
+    "timezone": "Asia/Kolkata"
+  }
+}
+```
+
+| Part | Meaning |
+|---|---|
+| `audit` | The row with every column, including `stack_trace` |
+| `error` | The `error_logs` row `error_log_id` points at (or the first linked one); `null` on success |
+| `errors` | Every linked error row (`error_log_id` ∪ `payload.error_log_ids`), oldest first |
+
+`400` if `:id` is not a UUID, `404` if unknown.
+
+### 7.9 Testing
+
+`npm run test:admin-api` → group **J) Activity & Error Logs** (11 cases: summary, meta, list, pings included,
+FAILED only, user filter, validation, CSV export, detail 400 / 404, detail with linked error). Read-only — the
+run changes nothing in the table.

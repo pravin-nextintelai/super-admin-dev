@@ -22,6 +22,7 @@ Portal roles (`super-admin`, `user-admin`, `account-admin`, `finance-admin`, `ma
 | Demo Bookings | `/api/admin/demo` | Auth / demo tables |
 | Contact Enquiries (Marketing) | `/api/admin/contact-enquiries` | Auth DB (`contact_enquiries`) — see [H](#h-contact-enquiries-marketing) |
 | Error Logs (Platform) | `/api/admin/error-logs` | Document_DB (`error_logs`) + Auth DB (user lookup) — see [I](#i-error-logs-platform) / [docs/ERROR_LOGS_API.md](../docs/ERROR_LOGS_API.md) |
+| Activity & Error Logs | `/api/admin/audit-logs` | Document_DB (`api_audit_logs`, one row per API call) + Auth DB (user lookup) — see [J](#j-activity--error-logs-api_audit_logs) / [docs/ERROR_LOGS_API.md §7](../docs/ERROR_LOGS_API.md) |
 | Public contact-form intake | `/api/public/contact` | Auth DB — **no auth**, rate-limited, own CORS |
 | Health Check | `/api/admin/health` | Main DB + Citation DB |
 
@@ -652,6 +653,30 @@ Rows carry `origin` (`server` / `browser` for frontend-reported errors, with `cl
 template `route`, and `recovered` / `attempts` / `after_response_start` / `related_count` lifted from `payload`, matching the
 "Central error logging" service documentation.
 If the table does not exist yet the endpoints answer `503 ERROR_LOGS_TABLE_MISSING`.
+
+---
+
+## J) Activity & Error Logs (`api_audit_logs`)
+
+One row per API call across every backend service (plus one row per out-of-request error: jobs, process
+crashes, browser reports, failed payments), in **Document_DB** → `api_audit_logs`, owned by
+agentic-document-service (migrations 184–186). Successful calls have empty error columns; failed ones carry
+`error_type` / `error_message` / `user_message` / `stack_trace` and `error_log_id` → `error_logs.id`.
+Read-only here. Roles: `super-admin`, `admin`, or the static `ADMIN_TOKEN`.
+
+**Full reference with request parameters and captured responses: [docs/ERROR_LOGS_API.md §7](../docs/ERROR_LOGS_API.md).**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/admin/audit-logs/summary` | Per service: calls, failed, failure rate, avg / p50 / p95 duration; top 20 APIs; top 20 users; breakdowns by action, resource type, status code; daily trend; most used API |
+| GET | `/api/admin/audit-logs/meta` | Distinct services, resource types, actions, HTTP methods, error types + defaults / limits |
+| GET | `/api/admin/audit-logs` | Paginated list (`page`, `page_size` ≤ 200, default 50), newest first. Filters: `from`, `to` (IST day or ISO), `since_hours`, `user`, `service`, `environment`, `status` (SUCCESS / FAILED), `method`, `endpoint` (prefix), `route`, `resource_type`, `action`, `request_id`, `error_log_id`, `error_type`, `status_code`, `status_class`, `q`, `exclude_pings` (default true), `kind`, `min_duration_ms`, `sort`. Never returns `stack_trace`. |
+| GET | `/api/admin/audit-logs/export` | CSV, same filters, max 50 000 rows |
+| GET | `/api/admin/audit-logs/:id` | Full row incl. `stack_trace` + the linked `error_logs` row(s) |
+
+Default window is the last 7 days; `/api/auth/activity/ping` rows are hidden unless `exclude_pings=false`.
+Rows carry `kind` (`request` / `browser` / `job`), `api` (`"GET /api/files/folders"`), `status_class`, `duration_display`,
+`error_log_ids` and the Auth-DB-enriched `user` / `user_name`, like the error-log rows.
 
 ---
 
