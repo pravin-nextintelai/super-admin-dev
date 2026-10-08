@@ -25,6 +25,9 @@ All examples below were captured from a live run of the backend on 2026-10-08.
 | Owner | **agentic-document-service** (its migration `183_error_logs.sql` creates the table). Other services write into it directly (`ERROR_LOG_DATABASE_URL`) or through that service's `POST /internal/error-logs`. |
 | This backend | **Reads, resolves, deletes only.** It never creates or alters the table. If the table is missing every endpoint answers `503 ERROR_LOGS_TABLE_MISSING`. |
 | User lookup | `user_id` / `user_email` on a row are enriched from the **Auth DB** `users` table (second query — the two databases cannot be joined). |
+| What a row is | By default (`ERROR_LOG_CAPTURE_ALL=false` in the services) only genuine failures the user got: 5xx / unhandled exceptions. With capture-all on, every 4xx becomes a `WARNING` row (`HttpErrorResponse4xx`) and failures the request recovered from are kept with `payload.recovered = true`. Browser-side errors (uncaught exceptions, failed fetches, render crashes, Razorpay cancellations) are reported by the frontend and land here too (`origin = browser`). |
+| Retention | Resolved rows are purged by the owner after `ERROR_LOG_RETENTION_DAYS` (90 by default). Unresolved rows stay. |
+| Provider names | `external_provider` is upper-case as written by the services: `GEMINI`, `CITATION`, `ANTHROPIC`, `RAZORPAY`, `PAYMENT_SERVICE`, `API_GATEWAY`, … The `provider` filter is case-insensitive. |
 
 ### 1.2 Base URL and authentication
 
@@ -103,7 +106,8 @@ Date filters (`from`, `to`) and the stats' `today` / `yesterday` / `this_month` 
 
 ### 1.5 Fingerprint = issue
 
-Rows that share a `fingerprint` are the same error happening repeatedly. Every list row carries
+Rows that share a `fingerprint` are the same error happening repeatedly
+(`sha256(service_name | error_type | method | first own-code frame file:line | external_provider | external_error_code)`, computed by the services). Every list row carries
 `occurrence_count` and `unresolved_occurrences`; `GET /issues` groups by fingerprint; and
 `PATCH /resolve { "fingerprint": … }` / `POST /bulk-delete { "fingerprint": … }` act on every occurrence at once.
 
@@ -142,8 +146,10 @@ and `PATCH /:id/resolve`.
 | `category`, `category_label` | string | `INTERNAL` · `DATABASE` · `TIMEOUT` · `AI_PROVIDER` · `AI_SAFETY_BLOCK` · `AI_EMPTY_RESPONSE` · `AI_INVALID_OUTPUT` · `CITATION_PROVIDER` · `EXTERNAL_API` |
 | `severity`, `severity_label` | string | `CRITICAL` · `ERROR` · `WARNING` |
 | `request_id` | string\|null | Correlation id of the request that failed |
-| `user_id` | string\|null | Platform user id as the service recorded it (text) |
-| `user_email` | string\|null | Platform user email as recorded |
+| `user_id` | string\|null | Platform user id as the service recorded it (text). Filled from the Auth DB when the row only recorded an email that resolves to a user. |
+| `user_email` | string\|null | Platform user email as recorded. **If the row only recorded `user_id`, the email is looked up in the Auth DB and returned here.** |
+| `user_email_source` | string\|null | `logged` = the service recorded the email · `auth_db` = filled from the Auth DB by user id · `null` = no email known |
+| `user_name` | string\|null | `username` from the Auth DB (shortcut for `user.username`) |
 | `user_key` | string\|null | Grouping key: `user_id`, else lower-cased `user_email` |
 | `user` | object\|null | Auth-DB user (see §2.1), `null` if the row has no user or the user no longer exists |
 | `ip_address` | string\|null | Client IP |
@@ -163,7 +169,16 @@ and `PATCH /:id/resolve`.
 | `occurrence_count` | int | Rows sharing this fingerprint (including this one) |
 | `unresolved_occurrences` | int | …of which still unresolved |
 | `has_payload` | bool | Whether `payload` is present |
-| `payload` | object\|null | **detail only** — extra JSON the service attached |
+| `payload` | object\|null | **detail only** — sanitized metadata the service attached: `route`, `user_agent`, `duration_ms`, `attempts`, `tokens`, `finish_reasons`, `related`, `internal_error` / `internal_stack`, `http_detail`, `logger`, `cause`; browser reports add `client_report`, `kind`, `flow`, `page`, `details` |
+| `origin` | string | `server` or `browser` (reported by the frontend: endpoint `client:<flow>` / `payload.client_report`) |
+| `route` | string\|null | Route template from `payload.route` (`/api/files/{file_id}`), while `endpoint` is the actual path with ids |
+| `recovered` | bool | The request recovered from this failure and answered 2xx/3xx (`payload.recovered`) |
+| `attempts` | int\|null | Same failure retried N times within one request (`payload.attempts`) |
+| `after_response_start` | bool | Failed after the response had started (dying SSE stream, background task); `status_code` is what was already sent |
+| `related_count` | int | Other distinct errors merged into this row (`payload.related[]`, visible in the detail view) |
+| `http_detail` | string\|null | For `HTTPException(5xx, detail=…)` rows: the detail the user saw while the row carries the underlying cause |
+| `client` | object\|null | Browser reports only: `{ kind, flow, page }` — `kind` is `unhandled` / `network` / `error` / `render` / `cancelled` / `failed` / `verify-failed`, `page` the SPA route |
+| `is_debug` | bool | Produced by the errorlog `_debug` routes / demo triggers rather than real traffic (filter them out with `exclude_debug=true`) |
 | `is_resolved` | bool | Resolution state |
 | `resolved_by` | string\|null | Admin email, or `admin-token` |
 | `resolved_at`, `resolved_at_ist` | timestamp\|null | |
@@ -192,7 +207,10 @@ and `PATCH /:id/resolve`.
 ```
 
 Matched by numeric `user_id` first, then by `user_email` (case-insensitive). If the Auth DB lookup
-fails the request still succeeds with `user: null`.
+fails the request still succeeds with `user: null` (and `user_email` stays whatever the service recorded).
+
+Services often log only the user id. The API fills the gap: a row with `user_id = "3"` and no email comes back
+with `"user_email": "pravin.sarule@nexintelai.com", "user_email_source": "auth_db", "user_name": "Pravin"`.
 
 ### 2.2 `external` (outbound API call that failed)
 
@@ -232,15 +250,18 @@ listed on each). Unknown params are ignored; invalid values return `400 VALIDATI
 | `status_class` | string | — | `2xx` · `3xx` · `4xx` · `5xx` |
 | `error_type` | string | — | exact, case-insensitive, e.g. `ValueError` |
 | `provider` | string | — | `external_provider`, exact, case-insensitive, e.g. `gemini` |
-| `user` | string | — | matches `user_id` **or** `user_email` (case-insensitive) — "everything this user hit" |
+| `user` | string | — | numeric id **or** email. Resolved through the Auth DB first, so an email also finds rows that only recorded the user id and an id also finds rows that only recorded the email. The matched account is echoed as `filters.user_resolved` (`null` when the value is not a known user — plain column matching is still applied). |
 | `user_id` | string | — | exact match on `user_id` only |
 | `user_email` | string | — | exact (case-insensitive) match on `user_email` only |
 | `request_id` | string | — | exact |
 | `fingerprint` | string | — | exact — every occurrence of one issue |
-| `endpoint` | string | — | contains, case-insensitive |
+| `endpoint` | string | — | contains, case-insensitive, on the actual path |
+| `route` | string | — | contains, case-insensitive, on the route template (`payload.route`, falling back to `endpoint`) |
 | `method` | string | — | contains, case-insensitive (code location) |
 | `resolved` | `all` · `true` · `false` | `all` | `1`/`0`/`yes`/`no` also accepted |
 | `has_user` | bool | — | `true` = only rows attributed to a user; `false` = only anonymous rows |
+| `origin` | `browser` · `server` · `all` | `all` | browser-reported rows vs. server-side rows |
+| `exclude_debug` | bool | `false` | `true` drops rows from the errorlog `_debug` routes / demo triggers |
 | `search` | string ≤ 200 | — | contains, case-insensitive, across `error_message`, `user_message`, `error_type`, `endpoint`, `method`, `user_email`, `user_id`, `request_id`, `resource_id`, `ip_address`, `service_name`, `external_endpoint`, `external_error_code` |
 | `from` | `YYYY-MM-DD` | — | IST calendar day, inclusive |
 | `to` | `YYYY-MM-DD` | — | IST calendar day, inclusive; must be ≥ `from` |
@@ -248,6 +269,7 @@ listed on each). Unknown params are ignored; invalid values return `400 VALIDATI
 | `sort` | string | `newest` | `newest` · `oldest` · `severity` · `service` · `status_code` · `latency` · `user` |
 
 Every list response echoes what was applied under `data.filters` (`"all"` / `null` for untouched filters).
+When `user` is given, `data.filters.user_resolved` is `{ "id", "email", "username" }` of the matched Auth-DB account, or `null`.
 
 ---
 
@@ -298,6 +320,9 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
       "external_api": 3,
       "http_5xx": 9,
       "http_4xx": 0,
+      "browser": 0,
+      "recovered": 0,
+      "debug": 8,
       "avg_latency_ms": 15452,
       "resolved_rate_pct": 0,
       "last_error_at": "2026-10-08T07:38:24.508Z",
@@ -338,7 +363,7 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
       { "value": "production", "total": 3, "unresolved": 3 }
     ],
     "top_endpoints": [
-      { "service_name": "agentic-document-service", "http_method": "POST", "endpoint": "/api/chat/completions", "total": 3, "unresolved": 3, "affected_users": 1, "last_error_at": "2026-10-08T07:38:24.508Z", "last_error_at_ist": { "iso": "2026-10-08T13:08:24+05:30", "date": "08 Oct 2026", "time": "01:08 PM", "time24": "13:08", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 01:08 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T07:38:24.508Z", "epoch_ms": 1791445104508 } }
+      { "service_name": "agentic-document-service", "http_method": "POST", "route": "/api/chat/completions", "endpoint": "/api/chat/completions", "total": 3, "unresolved": 3, "affected_users": 1, "last_error_at": "2026-10-08T07:38:24.508Z", "last_error_at_ist": { "iso": "2026-10-08T13:08:24+05:30", "date": "08 Oct 2026", "time": "01:08 PM", "time24": "13:08", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 01:08 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T07:38:24.508Z", "epoch_ms": 1791445104508 } }
     ],
     "top_issues": [
       {
@@ -371,6 +396,8 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
         "user_key": "3",
         "user_id": "3",
         "user_email": "pravin.sarule@nexintelai.com",
+        "user_email_source": "logged",
+        "user_name": "Pravin",
         "user": { "id": 3, "email": "pravin.sarule@nexintelai.com", "username": "Pravin", "role": "user", "account_type": null, "approval_status": "APPROVED", "is_blocked": false, "is_active": true, "active_plan_name": null, "last_seen_at": "2026-09-17T10:18:29.478Z", "last_seen_at_ist": { "iso": "2026-09-17T15:48:29+05:30", "date": "17 Sep 2026", "time": "03:48 PM", "time24": "15:48", "weekday": "Thu", "display": "Thu, 17 Sep 2026, 03:48 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-09-17T10:18:29.478Z", "epoch_ms": 1789640309478 }, "registered_at": "2025-12-03T04:45:35.002Z" },
         "total": 3,
         "unresolved": 3,
@@ -410,11 +437,12 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
 | `distinct_issues`, `distinct_issues_unresolved` | Distinct fingerprints |
 | `services` | Distinct `service_name` |
 | `external_api`, `http_5xx`, `http_4xx` | Rows with `source = EXTERNAL_API` / status ≥ 500 / status 4xx |
+| `browser`, `recovered`, `debug` | Browser-reported rows / failures the request recovered from / rows from the `_debug` routes |
 | `avg_latency_ms` | Average of non-null `latency_ms` |
 | `last_error_at`, `last_critical_at` (+ `_ist`) | Most recent row / most recent CRITICAL row |
 
 `top_issues` has the shape of `GET /issues` rows (max 10), `top_users` the shape of `GET /users` rows (max 10),
-`top_endpoints` groups by service + method + endpoint (max 10), `recent_unresolved` is up to 5 full log rows.
+`top_endpoints` groups by service + method + **route template** (`payload.route`, else the path) so `/api/files/123` and `/api/files/456` count together; `endpoint` on each entry is one sample path (max 10). `recent_unresolved` is up to 5 full log rows.
 
 ---
 
@@ -554,6 +582,8 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
         "request_id": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4",
         "user_id": "3",
         "user_email": "pravin.sarule@nexintelai.com",
+        "user_email_source": "logged",
+        "user_name": "Pravin",
         "user_key": "3",
         "user": { "id": 3, "email": "pravin.sarule@nexintelai.com", "username": "Pravin", "role": "user", "account_type": null, "approval_status": "APPROVED", "is_blocked": false, "is_active": true, "active_plan_name": null, "last_seen_at": "2026-09-17T10:18:29.478Z", "last_seen_at_ist": { "iso": "2026-09-17T15:48:29+05:30", "date": "17 Sep 2026", "time": "03:48 PM", "time24": "15:48", "weekday": "Thu", "display": "Thu, 17 Sep 2026, 03:48 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-09-17T10:18:29.478Z", "epoch_ms": 1789640309478 }, "registered_at": "2025-12-03T04:45:35.002Z" },
         "ip_address": "103.21.58.14",
@@ -576,6 +606,15 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
         "occurrence_count": 1,
         "unresolved_occurrences": 1,
         "has_payload": true,
+        "origin": "server",
+        "route": "/api/chat/completions",
+        "recovered": false,
+        "attempts": null,
+        "after_response_start": false,
+        "related_count": 0,
+        "http_detail": null,
+        "client": null,
+        "is_debug": false,
         "is_resolved": false,
         "resolved_by": null,
         "resolved_at": null,
@@ -596,6 +635,7 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
       "error_type": null,
       "provider": null,
       "user": "pravin.sarule@nexintelai.com",
+      "user_resolved": { "id": 3, "email": "pravin.sarule@nexintelai.com", "username": "Pravin" },
       "user_id": null,
       "user_email": null,
       "request_id": null,
@@ -657,6 +697,9 @@ More useful queries:
 | Errors between two IST dates | `?from=2026-10-01&to=2026-10-08` |
 | Slowest failures | `?sort=latency` |
 | Text search | `?search=timeout` |
+| Only what the browser reported (failed fetches, crashes, Razorpay) | `?origin=browser` |
+| Real traffic only, no debug-route noise | `?exclude_debug=true` |
+| One route template regardless of ids | `?route=/api/files/{file_id}` |
 
 **Error `400`** — invalid query (e.g. `?sort=random`)
 
@@ -736,6 +779,8 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
         "user_key": "3",
         "user_id": "3",
         "user_email": "pravin.sarule@nexintelai.com",
+        "user_email_source": "logged",
+        "user_name": "Pravin",
         "user": { "id": 3, "email": "pravin.sarule@nexintelai.com", "username": "Pravin", "role": "user", "account_type": null, "approval_status": "APPROVED", "is_blocked": false, "is_active": true, "active_plan_name": null, "last_seen_at": "2026-09-17T10:18:29.478Z", "last_seen_at_ist": { "iso": "2026-09-17T15:48:29+05:30", "date": "17 Sep 2026", "time": "03:48 PM", "time24": "15:48", "weekday": "Thu", "display": "Thu, 17 Sep 2026, 03:48 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-09-17T10:18:29.478Z", "epoch_ms": 1789640309478 }, "registered_at": "2025-12-03T04:45:35.002Z" },
         "total": 3,
         "unresolved": 3,
@@ -769,9 +814,13 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
 }
 ```
 
+Grouping uses what the services recorded: rows that logged only the id and rows that logged only the email
+of the same person form two groups (`user_key` `"3"` and `"pravin.sarule@nexintelai.com"`); both are enriched with the same Auth-DB account.
+
 | Field | Meaning |
 |---|---|
 | `user_key` | Pass it to `GET /?user=<user_key>` to list that user's rows |
+| `user_id`, `user_email`, `user_email_source`, `user_name` | As on log rows: whatever the services recorded, with the email / name filled from the Auth DB when only the id was logged |
 | `total`, `unresolved`, `critical`, `last_24h`, `last_7_days` | Counts for this user |
 | `distinct_errors` | Distinct fingerprints |
 | `services` | Every service this user hit an error in |
@@ -855,7 +904,8 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
     "filters": {
       "service": "all", "environment": "all", "source": "all", "category": "all", "severity": "all",
       "status_code": "all", "status_class": null, "error_type": null, "provider": null,
-      "user": "3", "user_id": null, "user_email": null, "request_id": null, "fingerprint": null,
+      "user": "3", "user_resolved": { "id": 3, "email": "pravin.sarule@nexintelai.com", "username": "Pravin" },
+      "user_id": null, "user_email": null, "request_id": null, "fingerprint": null,
       "endpoint": null, "method": null, "resolved": "all", "has_user": null, "search": null,
       "from": null, "to": null, "since_hours": null, "timezone": "Asia/Kolkata"
     },
@@ -912,6 +962,8 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
       "request_id": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4",
       "user_id": "3",
       "user_email": "pravin.sarule@nexintelai.com",
+      "user_email_source": "logged",
+      "user_name": "Pravin",
       "user_key": "3",
       "user": { "id": 3, "email": "pravin.sarule@nexintelai.com", "username": "Pravin", "role": "user", "account_type": null, "approval_status": "APPROVED", "is_blocked": false, "is_active": true, "active_plan_name": null, "last_seen_at": "2026-09-17T10:18:29.478Z", "last_seen_at_ist": { "iso": "2026-09-17T15:48:29+05:30", "date": "17 Sep 2026", "time": "03:48 PM", "time24": "15:48", "weekday": "Thu", "display": "Thu, 17 Sep 2026, 03:48 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-09-17T10:18:29.478Z", "epoch_ms": 1789640309478 }, "registered_at": "2025-12-03T04:45:35.002Z" },
       "ip_address": "103.21.58.14",
@@ -942,6 +994,15 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
       "occurrence_count": 2,
       "unresolved_occurrences": 2,
       "has_payload": true,
+      "origin": "server",
+      "route": "/api/chat/completions",
+      "recovered": false,
+      "attempts": null,
+      "after_response_start": false,
+      "related_count": 0,
+      "http_detail": null,
+      "client": null,
+      "is_debug": false,
       "is_resolved": false,
       "resolved_by": null,
       "resolved_at": null,
@@ -967,6 +1028,34 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
       "last_seen": "2026-10-08T07:38:24.477Z",
       "last_seen_ist": { "iso": "2026-10-08T13:08:24+05:30", "date": "08 Oct 2026", "time": "01:08 PM", "time24": "13:08", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 01:08 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T07:38:24.477Z", "epoch_ms": 1791445104477 }
     },
+    "audit": {
+      "id": "8261391f-fb7b-48fc-9dc0-34686994c688",
+      "created_at": "2026-10-08T07:38:24.600Z",
+      "created_at_ist": { "iso": "2026-10-08T13:08:24+05:30", "date": "08 Oct 2026", "time": "01:08 PM", "time24": "13:08", "weekday": "Thu", "display": "Thu, 08 Oct 2026, 01:08 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-10-08T07:38:24.600Z", "epoch_ms": 1791445104600 },
+      "service_name": "agentic-document-service",
+      "environment": "production",
+      "request_id": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4",
+      "user_id": "3",
+      "user_email": "pravin.sarule@nexintelai.com",
+      "ip_address": "103.21.58.14",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+      "http_method": "POST",
+      "endpoint": "/api/chat/completions",
+      "route": "/api/chat/completions",
+      "status_code": 502,
+      "status": "FAILED",
+      "duration_ms": 30412,
+      "error_log_id": "5544eb3d-6236-449e-bb2d-62d51969aac4",
+      "error_type": "ProviderUnavailableError",
+      "error_message": "Gemini returned 502 UNAVAILABLE after 3 retries",
+      "user_message": "The AI service is temporarily unavailable. Please try again.",
+      "action": "CREATE",
+      "method": "ChatService.complete",
+      "resource_type": "CHAT SESSION",
+      "resource_id": "sess_77d019",
+      "payload": { "method": "ChatService.complete" },
+      "matched_by": "error_log_id"
+    },
     "related": {
       "same_request": [
         {
@@ -985,6 +1074,8 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
           "request_id": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4",
           "user_id": "3",
           "user_email": "pravin.sarule@nexintelai.com",
+          "user_email_source": "logged",
+          "user_name": "Pravin",
           "user_key": "3",
           "user": { "id": 3, "email": "pravin.sarule@nexintelai.com", "username": "Pravin", "role": "user", "account_type": null, "approval_status": "APPROVED", "is_blocked": false, "is_active": true, "active_plan_name": null, "last_seen_at": "2026-09-17T10:18:29.478Z", "last_seen_at_ist": { "iso": "2026-09-17T15:48:29+05:30", "date": "17 Sep 2026", "time": "03:48 PM", "time24": "15:48", "weekday": "Thu", "display": "Thu, 17 Sep 2026, 03:48 PM IST", "timezone": "Asia/Kolkata", "utc": "2026-09-17T10:18:29.478Z", "epoch_ms": 1789640309478 }, "registered_at": "2025-12-03T04:45:35.002Z" },
           "ip_address": "103.21.58.14",
@@ -1007,6 +1098,15 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
           "occurrence_count": 1,
           "unresolved_occurrences": 1,
           "has_payload": true,
+          "origin": "server",
+          "route": "/api/chat/completions",
+          "recovered": false,
+          "attempts": null,
+          "after_response_start": false,
+          "related_count": 0,
+          "http_detail": null,
+          "client": null,
+          "is_debug": false,
           "is_resolved": false,
           "resolved_by": null,
           "resolved_at": null,
@@ -1028,6 +1128,7 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
 |---|---|
 | `log` | The row with every column (§2), including `stack_trace`, `payload`, `external.response` |
 | `issue` | Summary of all rows sharing this fingerprint (`null` when the row has no fingerprint) |
+| `audit` | The `api_audit_logs` row of the request that produced this error (one audit row per request; a failed one stores `error_log_id`). Matched by `error_log_id`, else by `request_id` + service (`matched_by` says which). Carries what the admin Audit Logs table shows: `action` (VIEW/CREATE/UPDATE/DELETE), `method` (handler, e.g. `FolderService.list_folders`), `resource_type`, `resource_id`, `status` (`SUCCESS`/`FAILED`), `duration_ms`, `user_agent`, plus a copy of `error_type` / `error_message` / `user_message`. `null` for browser reports, jobs, and when the audit table is absent. |
 | `related.same_request` | Other rows with the same `request_id`, oldest first, max 10 — what else failed in that request |
 | `related.same_issue` | Other rows with the same `fingerprint`, newest first, max 10 |
 
@@ -1290,8 +1391,9 @@ Unknown ids are skipped; `deleted` can be `0`.
 
 **"What errors did this user get?"**
 
-1. `GET /users?search=<email>` or just `GET /?user=<email>` — the list shows every row with
-   `user_message` (what they saw) and `error_message` (what actually happened).
+1. `GET /?user=<email or id>` — the id/email is resolved through the Auth DB, so this finds the rows
+   whichever identifier the service logged. Each row shows `user_message` (what they saw),
+   `error_message` (what actually happened) and the user's `user_email` / `user_name`.
 2. Open a row with `GET /:id` for the stack trace and `related.same_request` (everything else that failed
    in that request).
 
@@ -1301,6 +1403,10 @@ Unknown ids are skipped; `deleted` can be `0`.
 2. `GET /:latest_id` — stack trace, payload, provider response.
 3. `GET /?fingerprint=<fp>&sort=oldest` — when it started, who it hit.
 4. Fix, then `PATCH /resolve { "fingerprint": "<fp>", "note": "…" }`.
+
+**Browser-side failures** (what the user actually saw in the app): `GET /?origin=browser&user=<email>` — rows with
+`client.kind` (`network`, `unhandled`, `render`, `cancelled`, …), `client.page` (the SPA route) and, for Razorpay,
+`external.provider = RAZORPAY` with `order_id` / `payment_id` / plan in `payload`.
 
 **Daily check**: `GET /stats` → `totals.unresolved`, `totals.last_24h`, `totals.affected_users_24h`,
 `totals.critical_unresolved`, `daily_trend`.

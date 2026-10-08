@@ -103,9 +103,12 @@ const listSchema = Joi.object({
   request_id: Joi.string().trim().max(64).allow(''),
   fingerprint: Joi.string().trim().max(64).allow(''),
   endpoint: Joi.string().trim().max(500).allow(''),
+  route: Joi.string().trim().max(500).allow(''),
   method: Joi.string().trim().max(255).allow(''),
   resolved: Joi.string().trim().lowercase().valid('all', 'true', 'false', '1', '0', 'yes', 'no').default('all'),
   has_user: boolish(),
+  origin: Joi.string().trim().lowercase().valid('browser', 'server', 'all').allow(''),
+  exclude_debug: boolish(),
   search: Joi.string().trim().max(200).allow(''),
   from: dateStr('from'),
   to: dateStr('to'),
@@ -121,6 +124,8 @@ const usersSchema = Joi.object({
   severity: Joi.string().trim().max(100).allow(''),
   category: Joi.string().trim().max(500).allow(''),
   resolved: Joi.string().trim().lowercase().valid('all', 'true', 'false', '1', '0', 'yes', 'no').default('all'),
+  origin: Joi.string().trim().lowercase().valid('browser', 'server', 'all').allow(''),
+  exclude_debug: boolish(),
   search: Joi.string().trim().max(200).allow(''),
   from: dateStr('from'),
   to: dateStr('to'),
@@ -135,6 +140,8 @@ const issuesSchema = Joi.object({
   category: Joi.string().trim().max(500).allow(''),
   resolved: Joi.string().trim().lowercase().valid('all', 'true', 'false', '1', '0', 'yes', 'no').default('all'),
   user: Joi.string().trim().max(255).allow(''),
+  origin: Joi.string().trim().lowercase().valid('browser', 'server', 'all').allow(''),
+  exclude_debug: boolish(),
   search: Joi.string().trim().max(200).allow(''),
   from: dateStr('from'),
   to: dateStr('to'),
@@ -205,9 +212,12 @@ function makeControllers(pool, docPool) {
       request_id: q.request_id || undefined,
       fingerprint: q.fingerprint || undefined,
       endpoint: q.endpoint || undefined,
+      route: q.route || undefined,
       method: q.method || undefined,
       resolved: parseResolved(q.resolved),
       has_user: typeof q.has_user === 'boolean' ? q.has_user : undefined,
+      origin: q.origin && q.origin !== 'all' ? q.origin : undefined,
+      exclude_debug: q.exclude_debug === true,
       search: q.search || undefined,
       from: q.from,
       to: q.to,
@@ -230,9 +240,12 @@ function makeControllers(pool, docPool) {
       request_id: filters.request_id || null,
       fingerprint: filters.fingerprint || null,
       endpoint: filters.endpoint || null,
+      route: filters.route || null,
       method: filters.method || null,
       resolved: typeof filters.resolved === 'boolean' ? filters.resolved : 'all',
       has_user: typeof filters.has_user === 'boolean' ? filters.has_user : null,
+      origin: filters.origin || 'all',
+      exclude_debug: filters.exclude_debug,
       search: filters.search || null,
       from: filters.from || null,
       to: filters.to || null,
@@ -254,6 +267,19 @@ function makeControllers(pool, docPool) {
       limit: forExport ? MAX_EXPORT_ROWS : q.limit || q.pageSize || 20,
       applied: { ...f.applied, sort: q.sort },
     };
+  }
+
+  /**
+   * Resolve the `user` filter through the Auth DB so an email also matches rows that only
+   * recorded the user id (and vice versa). Echoes who was matched as `filters.user_resolved`.
+   */
+  async function attachUserMatch(filters, applied) {
+    if (!filters.user) return;
+    const m = await svc.resolveUserFilter(pool, filters.user, logger);
+    filters.user_match = m;
+    applied.user_resolved = m.resolved
+      ? { id: m.resolved.id, email: m.resolved.email, username: m.resolved.username }
+      : null;
   }
 
   async function serializeWithUsers(rows, now) {
@@ -299,6 +325,9 @@ function makeControllers(pool, docPool) {
           external_api: t.external_api,
           http_5xx: t.http_5xx,
           http_4xx: t.http_4xx,
+          browser: t.browser,
+          recovered: t.recovered,
+          debug: t.debug,
           avg_latency_ms: t.avg_latency_ms ?? null,
           resolved_rate_pct: t.total ? Math.round((t.resolved / t.total) * 1000) / 10 : 0,
           last_error_at: t.last_error_at ? new Date(t.last_error_at).toISOString() : null,
@@ -363,6 +392,7 @@ function makeControllers(pool, docPool) {
     try {
       const q = resolveListQuery(req);
       if (q.error) return fail(req, res, 400, 'VALIDATION_ERROR', 'Invalid query parameters', q.error);
+      await attachUserMatch(q.filters, q.applied);
 
       const now = new Date();
       const { rows, total } = await svc.listLogs(docPool, { filters: q.filters, sort: q.sort, page: q.page, limit: q.limit });
@@ -400,6 +430,7 @@ function makeControllers(pool, docPool) {
     try {
       const q = resolveListQuery(req, { forExport: true });
       if (q.error) return fail(req, res, 400, 'VALIDATION_ERROR', 'Invalid query parameters', q.error);
+      await attachUserMatch(q.filters, q.applied);
 
       const now = new Date();
       const { rows, total } = await svc.listLogs(docPool, { filters: q.filters, sort: q.sort, page: 1, limit: MAX_EXPORT_ROWS });
@@ -472,6 +503,7 @@ function makeControllers(pool, docPool) {
       if (error) return fail(req, res, 400, 'VALIDATION_ERROR', 'Invalid query parameters', error);
       const f = resolveFilters(q);
       if (f.error) return fail(req, res, 400, 'VALIDATION_ERROR', 'Invalid query parameters', f.error);
+      await attachUserMatch(f.filters, f.applied);
 
       const now = new Date();
       const limit = q.limit || q.pageSize || 20;
@@ -506,6 +538,7 @@ function makeControllers(pool, docPool) {
       if (error) return fail(req, res, 400, 'VALIDATION_ERROR', 'Invalid query parameters', error);
       const f = resolveFilters(q);
       if (f.error) return fail(req, res, 400, 'VALIDATION_ERROR', 'Invalid query parameters', f.error);
+      await attachUserMatch(f.filters, f.applied);
 
       const now = new Date();
       const rows = await svc.listIssues(docPool, { filters: f.filters, limit: q.limit });
@@ -532,7 +565,7 @@ function makeControllers(pool, docPool) {
       if (!row) return fail(req, res, 404, 'NOT_FOUND', 'Error log not found');
 
       const now = new Date();
-      const related = await svc.getRelated(docPool, row);
+      const [related, audit] = await Promise.all([svc.getRelated(docPool, row), svc.getAuditForLog(docPool, row, logger)]);
       const maps = await svc.enrichRows(pool, [row, ...related.sameRequest, ...related.sameIssue], logger);
 
       const log = svc.serializeLog(row, { now, full: true, user: svc.resolveUserFor(row, maps) });
@@ -560,6 +593,7 @@ function makeControllers(pool, docPool) {
         data: {
           log,
           issue,
+          audit: svc.serializeAudit(audit),
           related: {
             same_request: related.sameRequest.map((r) => svc.serializeLog(r, { now, user: svc.resolveUserFor(r, maps) })),
             same_issue: related.sameIssue.map((r) => svc.serializeLog(r, { now, user: svc.resolveUserFor(r, maps) })),

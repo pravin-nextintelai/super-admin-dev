@@ -634,18 +634,23 @@ agentic-document-service. This backend reads, resolves and deletes those rows un
 |---|---|---|
 | GET | `/api/admin/error-logs/stats` | KPIs, 14-day trend, breakdowns by service / category / source / severity / status, top issues, top endpoints, top users, latest unresolved |
 | GET | `/api/admin/error-logs/meta` | Filter vocabulary + values actually present + permissions |
-| GET | `/api/admin/error-logs` | Paginated list. Filters: `service`, `environment`, `source`, `category`, `severity`, `status_code`, `status_class`, `error_type`, `provider`, `user`, `user_id`, `user_email`, `request_id`, `fingerprint`, `endpoint`, `method`, `resolved`, `has_user`, `search`, `from`, `to`, `since_hours`, `sort` |
+| GET | `/api/admin/error-logs` | Paginated list. Filters: `service`, `environment`, `source`, `category`, `severity`, `status_code`, `status_class`, `error_type`, `provider`, `user`, `user_id`, `user_email`, `request_id`, `fingerprint`, `endpoint`, `route`, `method`, `resolved`, `has_user`, `origin` (browser / server), `exclude_debug`, `search`, `from`, `to`, `since_hours`, `sort` |
 | GET | `/api/admin/error-logs/export` | CSV of the same list (max 5000 rows, IST columns) |
 | GET | `/api/admin/error-logs/users` | Errors grouped per user, enriched from the Auth DB `users` table |
 | GET | `/api/admin/error-logs/issues` | Errors grouped per fingerprint |
-| GET | `/api/admin/error-logs/:id` | Full row: stack trace, payload, external API response, issue summary, related rows |
+| GET | `/api/admin/error-logs/:id` | Full row: stack trace, payload, external API response, issue summary, the request's `api_audit_logs` row (action / method / resource / duration), related rows |
 | PATCH | `/api/admin/error-logs/:id/resolve` | `{ resolved, note? }` — resolve / reopen one row |
 | PATCH | `/api/admin/error-logs/resolve` | `{ ids[] | fingerprint, resolved, note? }` — resolve / reopen many |
 | DELETE | `/api/admin/error-logs/:id` | Delete one row |
 | POST | `/api/admin/error-logs/bulk-delete` | `{ ids[] | fingerprint }` — delete many |
 
-Everything a user hit: `GET /api/admin/error-logs?user=<user_id or email>`.
+Everything a user hit: `GET /api/admin/error-logs?user=<user_id or email>` — the value is resolved through the Auth DB, so an
+email also finds rows that only recorded the user id (and vice versa). Rows that recorded only a `user_id` come back with
+`user_email` filled from the Auth DB (`user_email_source: "auth_db"`) plus `user_name`.
 All timestamps come as UTC ISO plus an `*_ist` object (same shape as section H).
+Rows carry `origin` (`server` / `browser` for frontend-reported errors, with `client.kind` / `flow` / `page`), the route
+template `route`, and `recovered` / `attempts` / `after_response_start` / `related_count` lifted from `payload`, matching the
+"Central error logging" service documentation.
 If the table does not exist yet the endpoints answer `503 ERROR_LOGS_TABLE_MISSING`.
 
 ---

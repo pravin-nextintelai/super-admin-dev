@@ -591,6 +591,41 @@ async function runTests() {
         });
     }
     {
+        const params = { origin: 'browser', limit: 50 };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        const logs = r.data?.data?.logs || [];
+        // Also check the complement: origin=server must return exactly stats.total - stats.browser rows.
+        const s = await request('GET', '/api/admin/error-logs/stats');
+        const srv = await request('GET', '/api/admin/error-logs', { params: { origin: 'server', limit: 1 } });
+        const complementOk = typeof s.data?.data?.totals?.total !== 'number'
+            || (srv.status === 200 && srv.data?.data?.pagination?.total === s.data.data.totals.total - (s.data.data.totals.browser || 0));
+        const pass = r.status === 200 && logs.every(l => l.origin === 'browser' && l.client && typeof l.client === 'object') && r.data?.data?.filters?.origin === 'browser' && complementOk;
+        addResult({
+            name: 'Error Logs List (browser-reported only)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'origin=browser returns only rows reported by the frontend (endpoint client:<flow>, payload.client_report); each carries client.kind / flow / page.',
+            inputs: 'Query: origin=browser', curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '200 + every row origin=browser with client{}', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { exclude_debug: 'true', limit: 100 };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        const logs = r.data?.data?.logs || [];
+        // Guard against a vacuous pass: the filtered total must equal (all rows) - (debug rows) from stats.
+        const s = await request('GET', '/api/admin/error-logs/stats');
+        const expectedTotal = typeof s.data?.data?.totals?.total === 'number' ? s.data.data.totals.total - (s.data.data.totals.debug || 0) : null;
+        const pass = r.status === 200 && logs.every(l => l.is_debug === false) && r.data?.data?.filters?.exclude_debug === true
+            && (expectedTotal === null || r.data?.data?.pagination?.total === expectedTotal);
+        addResult({
+            name: 'Error Logs List (exclude debug rows)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'exclude_debug=true hides rows produced by the errorlog _debug routes / demo triggers; total must equal stats.total - stats.debug.',
+            inputs: 'Query: exclude_debug=true', curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '200 + no row with is_debug=true + total = stats.total - stats.debug', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
         const params = { search: 'zzz-no-such-error-zzz' };
         const r = await request('GET', '/api/admin/error-logs', { params });
         const pass = r.status === 200 && Array.isArray(r.data?.data?.logs) && r.data.data.logs.length === 0 && r.data?.data?.pagination?.total === 0;
@@ -697,13 +732,15 @@ async function runTests() {
             const pass = r.status === 200 && d?.log?.id === errorLogId
                 && Object.prototype.hasOwnProperty.call(d.log, 'stack_trace')
                 && Object.prototype.hasOwnProperty.call(d.log, 'payload')
+                && Object.prototype.hasOwnProperty.call(d, 'audit')
+                && ['browser', 'server'].includes(d.log.origin) && typeof d.log.is_debug === 'boolean'
                 && Array.isArray(d?.related?.same_request) && Array.isArray(d?.related?.same_issue)
                 && Boolean(d?.log?.created_at_ist?.display);
             addResult({
                 name: 'Error Log Detail', group: 'Error Logs', method: 'GET', path: `/api/admin/error-logs/${errorLogId}`,
-                purpose: 'Full row incl. stack trace, payload, external API response, issue summary (occurrences) and related rows (same request id / same fingerprint).',
+                purpose: 'Full row incl. stack trace, payload, external API response, issue summary (occurrences), the api_audit_logs row of the request, and related rows (same request id / same fingerprint).',
                 inputs: 'Path: id (UUID)', curl: buildCurl('GET', `/api/admin/error-logs/${errorLogId}`),
-                expected: '200 + data.log (with stack_trace, payload), data.issue, data.related', actual: r.status, pass,
+                expected: '200 + data.log (with stack_trace, payload, origin), data.issue, data.audit, data.related', actual: r.status, pass,
                 latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
             });
         }

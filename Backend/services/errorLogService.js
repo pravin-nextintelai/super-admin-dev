@@ -80,6 +80,37 @@ function labelFor(map, value) {
 const USER_KEY_SQL = `COALESCE(NULLIF(e.user_id, ''), LOWER(NULLIF(e.user_email, '')))`;
 const HAS_USER_SQL = `(NULLIF(e.user_id, '') IS NOT NULL OR NULLIF(e.user_email, '') IS NOT NULL)`;
 
+// NOTE: every predicate below is COALESCE-guarded so it is TRUE or FALSE, never NULL — `NOT (…)`
+// on a NULL (endpoint / payload key absent) would silently drop the row from "server" / "exclude_debug" views.
+
+/** Browser-side reports (frontend clientErrorReporter / Razorpay flows): endpoint `client:<flow>` + payload.client_report. */
+const BROWSER_SQL = `(COALESCE(e.endpoint, '') LIKE 'client:%' OR COALESCE(e.payload->>'client_report', '') = 'true')`;
+/** Rows produced by the errorlog debug routes / demo triggers, not by real traffic. */
+const DEBUG_SQL = `(COALESCE(e.endpoint, '') LIKE '/internal/error-logs/_debug%' OR COALESCE(e.endpoint, '') LIKE '/__demo/%' OR COALESCE(e.error_message, '') LIKE 'errorlog debug%' OR COALESCE(e.error_message, '') LIKE 'demo:%')`;
+/** A failure the request recovered from (final status 2xx/3xx) — stored only with ERROR_LOG_CAPTURE_ALL / STORE_RECOVERED_EXTERNAL. */
+const RECOVERED_SQL = `(COALESCE(e.payload->>'recovered', '') = 'true')`;
+/** The route template is `payload.route` (endpoint holds the actual path with ids). */
+const ROUTE_SQL = `COALESCE(NULLIF(e.payload->>'route', ''), e.endpoint)`;
+
+/**
+ * Lightweight values lifted out of `payload` so list views can show them without shipping the
+ * whole JSON (see "Central error logging" doc: route, recovered, attempts, after_response_start,
+ * related, http_detail, browser report kind/flow/page).
+ */
+const DERIVED_COLUMNS = `
+  e.payload->>'route' AS route,
+  CASE WHEN e.payload->>'recovered' IN ('true', 'false') THEN (e.payload->>'recovered')::boolean END AS recovered,
+  CASE WHEN e.payload->>'attempts' ~ '^[0-9]+$' THEN (e.payload->>'attempts')::int END AS attempts,
+  CASE WHEN e.payload->>'after_response_start' IN ('true', 'false') THEN (e.payload->>'after_response_start')::boolean END AS after_response_start,
+  CASE WHEN jsonb_typeof(e.payload->'related') = 'array' THEN jsonb_array_length(e.payload->'related') ELSE 0 END AS related_count,
+  e.payload->>'http_detail' AS http_detail,
+  e.payload->>'kind' AS client_kind,
+  e.payload->>'flow' AS client_flow,
+  e.payload->>'page' AS client_page,
+  ${BROWSER_SQL} AS is_browser,
+  ${DEBUG_SQL} AS is_debug
+`;
+
 /** Columns returned in list views (heavy text columns are left to the detail view). */
 const LIST_COLUMNS = `
   e.id, e.created_at, e.service_name, e.environment, e.source, e.category, e.severity,
@@ -91,7 +122,8 @@ const LIST_COLUMNS = `
   (e.external_response IS NOT NULL AND e.external_response <> '') AS has_external_response,
   (e.payload IS NOT NULL) AS has_payload,
   e.latency_ms, e.fingerprint,
-  e.is_resolved, e.resolved_by, e.resolved_at, e.resolution_note
+  e.is_resolved, e.resolved_by, e.resolved_at, e.resolution_note,
+  ${DERIVED_COLUMNS}
 `;
 
 const OCCURRENCE_SQL = `
@@ -109,6 +141,17 @@ function serializeLog(row, { now = new Date(), full = false, user = null } = {})
   if (!row) return null;
   const createdAt = row.created_at ? new Date(row.created_at) : null;
   const statusCode = row.status_code != null ? Number(row.status_code) : null;
+  const pl = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload) ? row.payload : {};
+  const isBrowser =
+    typeof row.is_browser === 'boolean'
+      ? row.is_browser
+      : String(row.endpoint || '').startsWith('client:') || pl.client_report === true;
+  const isDebug =
+    typeof row.is_debug === 'boolean'
+      ? row.is_debug
+      : /^\/internal\/error-logs\/_debug|^\/__demo\//.test(String(row.endpoint || '')) || /^(errorlog debug|demo:)/.test(String(row.error_message || ''));
+  const relatedCount =
+    row.related_count != null ? Number(row.related_count) : Array.isArray(pl.related) ? pl.related.length : 0;
 
   const out = {
     id: row.id,
@@ -126,8 +169,12 @@ function serializeLog(row, { now = new Date(), full = false, user = null } = {})
     severity_label: labelFor(SEVERITY_LABELS, row.severity),
 
     request_id: row.request_id || null,
-    user_id: row.user_id || null,
-    user_email: row.user_email || null,
+    // user_id / user_email as the service recorded them; when one is missing it is filled
+    // from the Auth DB user resolved for the row (user_email_source says which).
+    user_id: row.user_id || (user ? String(user.id) : null),
+    user_email: row.user_email || (user && user.email) || null,
+    user_email_source: row.user_email ? 'logged' : user && user.email ? 'auth_db' : null,
+    user_name: user ? user.username || null : null,
     user_key: row.user_id || (row.user_email ? String(row.user_email).toLowerCase() : null),
     user: user || null,
     ip_address: row.ip_address || null,
@@ -164,6 +211,20 @@ function serializeLog(row, { now = new Date(), full = false, user = null } = {})
     unresolved_occurrences: row.unresolved_occurrences != null ? Number(row.unresolved_occurrences) : null,
     has_payload: full ? row.payload != null : Boolean(row.has_payload),
 
+    // Lifted from payload (see "Central error logging" → The table → payload)
+    origin: isBrowser ? 'browser' : 'server',
+    route: row.route || pl.route || null,
+    recovered: typeof row.recovered === 'boolean' ? row.recovered : pl.recovered === true,
+    attempts: row.attempts != null ? Number(row.attempts) : Number.isInteger(pl.attempts) ? pl.attempts : null,
+    after_response_start:
+      typeof row.after_response_start === 'boolean' ? row.after_response_start : pl.after_response_start === true,
+    related_count: relatedCount,
+    http_detail: row.http_detail || pl.http_detail || null,
+    client: isBrowser
+      ? { kind: row.client_kind || pl.kind || null, flow: row.client_flow || pl.flow || null, page: row.client_page || pl.page || null }
+      : null,
+    is_debug: Boolean(isDebug),
+
     is_resolved: Boolean(row.is_resolved),
     resolved_by: row.resolved_by || null,
     resolved_at: iso(row.resolved_at),
@@ -185,8 +246,10 @@ function serializeUserGroup(row, { now = new Date(), user = null } = {}) {
   const lastAt = row.last_error_at ? new Date(row.last_error_at) : null;
   return {
     user_key: row.user_key,
-    user_id: row.user_id || null,
-    user_email: row.user_email || null,
+    user_id: row.user_id || (user ? String(user.id) : null),
+    user_email: row.user_email || (user && user.email) || null,
+    user_email_source: row.user_email ? 'logged' : user && user.email ? 'auth_db' : null,
+    user_name: user ? user.username || null : null,
     user: user || null,
     total: Number(row.total || 0),
     unresolved: Number(row.unresolved || 0),
@@ -268,7 +331,14 @@ function buildFilters(f = {}) {
   }
   if (f.error_type) where.push(`LOWER(COALESCE(e.error_type, '')) = LOWER(${p(f.error_type)})`);
   if (f.provider) where.push(`LOWER(COALESCE(e.external_provider, '')) = LOWER(${p(f.provider)})`);
-  if (f.user) {
+  if (f.user_match && (f.user_match.ids.length || f.user_match.emails.length)) {
+    // Resolved through the Auth DB (see resolveUserFilter): an email also finds rows that only
+    // recorded the user id, and vice versa.
+    const parts = [];
+    if (f.user_match.ids.length) parts.push(`e.user_id = ANY(${p(f.user_match.ids)}::text[])`);
+    if (f.user_match.emails.length) parts.push(`LOWER(COALESCE(e.user_email, '')) = ANY(${p(f.user_match.emails)}::text[])`);
+    where.push(`(${parts.join(' OR ')})`);
+  } else if (f.user) {
     const u = String(f.user).trim();
     where.push(`(e.user_id = ${p(u)} OR LOWER(COALESCE(e.user_email, '')) = LOWER(${p(u)}))`);
   }
@@ -277,9 +347,13 @@ function buildFilters(f = {}) {
   if (f.request_id) where.push(`e.request_id = ${p(f.request_id)}`);
   if (f.fingerprint) where.push(`e.fingerprint = ${p(f.fingerprint)}`);
   if (f.endpoint) where.push(`COALESCE(e.endpoint, '') ILIKE ${p(`%${escapeLike(f.endpoint)}%`)}`);
+  if (f.route) where.push(`${ROUTE_SQL} ILIKE ${p(`%${escapeLike(f.route)}%`)}`);
   if (f.method) where.push(`COALESCE(e.method, '') ILIKE ${p(`%${escapeLike(f.method)}%`)}`);
   if (typeof f.resolved === 'boolean') where.push(`e.is_resolved = ${p(f.resolved)}`);
   if (typeof f.has_user === 'boolean') where.push(f.has_user ? HAS_USER_SQL : `NOT ${HAS_USER_SQL}`);
+  if (f.origin === 'browser') where.push(BROWSER_SQL);
+  else if (f.origin === 'server') where.push(`NOT ${BROWSER_SQL}`);
+  if (f.exclude_debug) where.push(`NOT ${DEBUG_SQL}`);
 
   if (f.search) {
     const like = p(`%${escapeLike(String(f.search).trim())}%`);
@@ -371,10 +445,74 @@ async function listLogs(docPool, { filters = {}, sort = 'newest', page = 1, limi
 
 async function getLogById(docPool, id) {
   const { rows } = await docPool.query(
-    `SELECT e.*, ${OCCURRENCE_SQL} FROM error_logs e WHERE e.id = $1`,
+    `SELECT e.*, ${DERIVED_COLUMNS}, ${OCCURRENCE_SQL} FROM error_logs e WHERE e.id = $1`,
     [id]
   );
   return rows[0] || null;
+}
+
+const AUDIT_COLUMNS = `
+  a.id, a.created_at, a.service_name, a.environment, a.request_id, a.user_id, a.user_email, a.ip_address, a.user_agent,
+  a.http_method, a.endpoint, a.route, a.status_code, a.status, a.duration_ms, a.error_log_id,
+  a.error_type, a.error_message, a.user_message, a.action, a.method, a.resource_type, a.resource_id, a.payload
+`;
+
+/**
+ * The `api_audit_logs` row for the request that produced an error row (one audit row per request;
+ * a failed one stores `error_log_id`). Matched by error_log_id first, then by request_id + service.
+ * Returns null when there is none or the audit table does not exist. Never throws.
+ */
+async function getAuditForLog(docPool, row, logger = null) {
+  try {
+    let r = await docPool.query(
+      `SELECT ${AUDIT_COLUMNS} FROM api_audit_logs a WHERE a.error_log_id = $1 ORDER BY a.created_at DESC LIMIT 1`,
+      [row.id]
+    );
+    if (r.rows[0]) return { ...r.rows[0], matched_by: 'error_log_id' };
+    if (!row.request_id) return null;
+    r = await docPool.query(
+      `SELECT ${AUDIT_COLUMNS} FROM api_audit_logs a
+       WHERE a.request_id = $1 AND a.service_name = $2
+       ORDER BY (a.status = 'FAILED') DESC, a.created_at DESC LIMIT 1`,
+      [row.request_id, row.service_name]
+    );
+    return r.rows[0] ? { ...r.rows[0], matched_by: 'request_id' } : null;
+  } catch (err) {
+    if (err.code !== '42P01' && logger) logger.warn('Error logs: api_audit_logs lookup failed', { summary: { message: err.message } });
+    return null;
+  }
+}
+
+function serializeAudit(a) {
+  if (!a) return null;
+  return {
+    id: a.id,
+    created_at: iso(a.created_at),
+    created_at_ist: formatIST(a.created_at),
+    service_name: a.service_name,
+    environment: a.environment || null,
+    request_id: a.request_id || null,
+    user_id: a.user_id || null,
+    user_email: a.user_email || null,
+    ip_address: a.ip_address || null,
+    user_agent: a.user_agent || null,
+    http_method: a.http_method || null,
+    endpoint: a.endpoint || null,
+    route: a.route || null,
+    status_code: a.status_code != null ? Number(a.status_code) : null,
+    status: a.status || null,
+    duration_ms: a.duration_ms != null ? Number(a.duration_ms) : null,
+    error_log_id: a.error_log_id || null,
+    error_type: a.error_type || null,
+    error_message: a.error_message || null,
+    user_message: a.user_message || null,
+    action: a.action || null,
+    method: a.method || null,
+    resource_type: a.resource_type || null,
+    resource_id: a.resource_id || null,
+    payload: a.payload ?? null,
+    matched_by: a.matched_by || null,
+  };
 }
 
 /** Rows that share the request id or the fingerprint of a given row (for the detail drawer). */
@@ -513,6 +651,9 @@ async function getStats(docPool) {
           COUNT(*) FILTER (WHERE e.source = 'EXTERNAL_API')::int               AS external_api,
           COUNT(*) FILTER (WHERE e.status_code >= 500)::int                    AS http_5xx,
           COUNT(*) FILTER (WHERE e.status_code BETWEEN 400 AND 499)::int       AS http_4xx,
+          COUNT(*) FILTER (WHERE ${BROWSER_SQL})::int                          AS browser,
+          COUNT(*) FILTER (WHERE ${RECOVERED_SQL})::int                        AS recovered,
+          COUNT(*) FILTER (WHERE ${DEBUG_SQL})::int                            AS debug,
           ROUND(AVG(e.latency_ms))::int                                        AS avg_latency_ms,
           MAX(e.created_at)                                                    AS last_error_at,
           MAX(e.created_at) FILTER (WHERE e.severity = 'CRITICAL')             AS last_critical_at
@@ -577,7 +718,9 @@ async function getStats(docPool) {
         FROM error_logs e GROUP BY 1 ORDER BY total DESC
       `),
       docPool.query(`
-        SELECT e.service_name, e.http_method, e.endpoint,
+        SELECT e.service_name, e.http_method,
+               ${ROUTE_SQL} AS route,
+               MIN(e.endpoint) AS endpoint,
                COUNT(*)::int AS total,
                COUNT(*) FILTER (WHERE NOT e.is_resolved)::int AS unresolved,
                COUNT(DISTINCT ${USER_KEY_SQL}) FILTER (WHERE ${HAS_USER_SQL})::int AS affected_users,
@@ -690,6 +833,30 @@ async function lookupUsers(pool, { ids = [], emails = [] } = {}, logger = null) 
   return { byId, byEmail };
 }
 
+/**
+ * Turn a `user` filter value (numeric id or email) into every identifier that user is known by,
+ * so the SQL filter matches rows that recorded only the id or only the email.
+ * Returns { ids: string[], emails: string[] (lower-cased), resolved: user|null }. Never throws.
+ */
+async function resolveUserFilter(pool, value, logger = null) {
+  const v = String(value ?? '').trim();
+  const ids = new Set();
+  const emails = new Set();
+  if (!v) return { ids: [], emails: [], resolved: null };
+
+  const isEmail = v.includes('@');
+  if (isEmail) emails.add(v.toLowerCase());
+  else ids.add(v);
+
+  const maps = await lookupUsers(pool, { ids: isEmail ? [] : [v], emails: isEmail ? [v] : [] }, logger);
+  const u = isEmail ? maps.byEmail.get(v.toLowerCase()) : maps.byId.get(v);
+  if (u) {
+    ids.add(String(u.id));
+    if (u.email) emails.add(String(u.email).toLowerCase());
+  }
+  return { ids: [...ids], emails: [...emails], resolved: u || null };
+}
+
 function resolveUserFor(row, maps) {
   if (!maps) return null;
   if (row.user_id && maps.byId.has(String(row.user_id))) return maps.byId.get(String(row.user_id));
@@ -763,16 +930,19 @@ module.exports = {
   serializeLog,
   serializeUserGroup,
   serializeIssue,
+  serializeAudit,
   // reads
   listLogs,
   getLogById,
   getRelated,
+  getAuditForLog,
   listUsers,
   listIssues,
   getStats,
   getMeta,
   // enrichment
   lookupUsers,
+  resolveUserFilter,
   resolveUserFor,
   enrichRows,
   // writes
