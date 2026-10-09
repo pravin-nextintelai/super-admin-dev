@@ -504,6 +504,509 @@ async function runTests() {
     }
 
     // ════════════════════════════════════════════════════════════════════════
+    // I) Error Logs (Platform) — /api/admin/error-logs
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('\n── I) Error Logs (Platform) ──');
+    let errorLogId = null;
+    let errorLogFingerprint = null;
+    let errorLogService = null;
+    let errorLogWasResolved = null;
+    {
+        const r = await request('GET', '/api/admin/error-logs/stats');
+        const d = r.data?.data;
+        const pass = r.status === 200 && r.data?.success === true
+            && typeof d?.totals?.total === 'number' && typeof d?.totals?.unresolved === 'number'
+            && typeof d?.totals?.affected_users === 'number'
+            && Array.isArray(d?.daily_trend) && Array.isArray(d?.by_service) && Array.isArray(d?.top_issues)
+            && Array.isArray(d?.top_users) && Array.isArray(d?.recent_unresolved) && Boolean(d?.generated_at_ist?.display);
+        addResult({
+            name: 'Error Logs Stats', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs/stats',
+            purpose: 'KPIs (total / unresolved / last 24h / affected users), 14-day trend, breakdowns by service, category, source, severity, status code, top issues, top endpoints, top users.',
+            inputs: 'Headers: Authorization', curl: buildCurl('GET', '/api/admin/error-logs/stats'),
+            expected: '200 + data.totals, daily_trend[], by_service[], top_issues[], top_users[]',
+            actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/error-logs/meta');
+        const d = r.data?.data;
+        const pass = r.status === 200 && r.data?.success === true
+            && Array.isArray(d?.vocab?.sources) && Array.isArray(d?.vocab?.categories) && Array.isArray(d?.vocab?.severities)
+            && Array.isArray(d?.used?.services) && Array.isArray(d?.sort_options) && typeof d?.permissions?.can_delete === 'boolean';
+        addResult({
+            name: 'Error Logs Meta', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs/meta',
+            purpose: 'Filter vocabulary (sources, categories, severities) + distinct values actually present (services, environments, error types, providers, status codes) + permissions.',
+            inputs: 'Headers: Authorization', curl: buildCurl('GET', '/api/admin/error-logs/meta'),
+            expected: '200 + data.vocab, data.used.services[], data.permissions',
+            actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { page: 1, limit: 5, resolved: 'all', sort: 'newest' };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        const d = r.data?.data;
+        const first = d?.logs?.[0];
+        const pass = r.status === 200 && r.data?.success === true && Array.isArray(d?.logs)
+            && typeof d?.pagination?.total === 'number' && d?.filters?.timezone === 'Asia/Kolkata'
+            && (!first || Boolean(first.id && first.created_at_ist?.display && typeof first.is_resolved === 'boolean' && first.service_name));
+        addResult({
+            name: 'Error Logs List', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'Paginated list of captured errors with IST timestamps, user enrichment and occurrence counts.',
+            inputs: 'Query: page, limit, resolved, sort (+ service, source, category, severity, status_code, user, search, from, to ...)',
+            curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '200 + data.logs[], data.pagination', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+        if (pass && first) {
+            errorLogId = first.id;
+            errorLogFingerprint = first.fingerprint || null;
+            errorLogService = first.service_name || null;
+            errorLogWasResolved = first.is_resolved;
+        }
+    }
+    if (errorLogService) {
+        const params = { service: errorLogService, limit: 50 };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        const logs = r.data?.data?.logs || [];
+        const pass = r.status === 200 && logs.length > 0 && logs.every(l => l.service_name === errorLogService);
+        addResult({
+            name: 'Error Logs List (service filter)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'Filter by service_name; every returned row must belong to that service.',
+            inputs: `Query: service=${errorLogService}`, curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '200 + only rows for that service', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { resolved: 'false', limit: 50 };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        const logs = r.data?.data?.logs || [];
+        const pass = r.status === 200 && logs.every(l => l.is_resolved === false) && r.data?.data?.filters?.resolved === false;
+        addResult({
+            name: 'Error Logs List (unresolved only)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'resolved=false returns only open errors.',
+            inputs: 'Query: resolved=false', curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '200 + every row is_resolved=false', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { origin: 'browser', limit: 50 };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        const logs = r.data?.data?.logs || [];
+        // Also check the complement: origin=server must return exactly stats.total - stats.browser rows.
+        const s = await request('GET', '/api/admin/error-logs/stats');
+        const srv = await request('GET', '/api/admin/error-logs', { params: { origin: 'server', limit: 1 } });
+        const complementOk = typeof s.data?.data?.totals?.total !== 'number'
+            || (srv.status === 200 && srv.data?.data?.pagination?.total === s.data.data.totals.total - (s.data.data.totals.browser || 0));
+        const pass = r.status === 200 && logs.every(l => l.origin === 'browser' && l.client && typeof l.client === 'object') && r.data?.data?.filters?.origin === 'browser' && complementOk;
+        addResult({
+            name: 'Error Logs List (browser-reported only)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'origin=browser returns only rows reported by the frontend (endpoint client:<flow>, payload.client_report); each carries client.kind / flow / page.',
+            inputs: 'Query: origin=browser', curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '200 + every row origin=browser with client{}', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { exclude_debug: 'true', limit: 100 };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        const logs = r.data?.data?.logs || [];
+        // Guard against a vacuous pass: the filtered total must equal (all rows) - (debug rows) from stats.
+        const s = await request('GET', '/api/admin/error-logs/stats');
+        const expectedTotal = typeof s.data?.data?.totals?.total === 'number' ? s.data.data.totals.total - (s.data.data.totals.debug || 0) : null;
+        const pass = r.status === 200 && logs.every(l => l.is_debug === false) && r.data?.data?.filters?.exclude_debug === true
+            && (expectedTotal === null || r.data?.data?.pagination?.total === expectedTotal);
+        addResult({
+            name: 'Error Logs List (exclude debug rows)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'exclude_debug=true hides rows produced by the errorlog _debug routes / demo triggers; total must equal stats.total - stats.debug.',
+            inputs: 'Query: exclude_debug=true', curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '200 + no row with is_debug=true + total = stats.total - stats.debug', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { search: 'zzz-no-such-error-zzz' };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        const pass = r.status === 200 && Array.isArray(r.data?.data?.logs) && r.data.data.logs.length === 0 && r.data?.data?.pagination?.total === 0;
+        addResult({
+            name: 'Error Logs List (search, no match)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'Free-text search across message, endpoint, user, request id; a nonsense term returns an empty page, not an error.',
+            inputs: 'Query: search', curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '200 + logs=[] total=0', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { status_code: 'abc' };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        addResult({
+            name: 'Error Logs List (INVALID status_code — expect 400)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'status_code must be a comma-separated list of 100–599 integers.',
+            inputs: 'Query: status_code=abc', curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_ERROR',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { from: '2026-02-01', to: '2026-01-01' };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        addResult({
+            name: 'Error Logs List (INVALID date range — expect 400)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: '"from" must be on or before "to".',
+            inputs: 'Query: from > to', curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_ERROR',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { page: 1, limit: 10, sort: 'most_errors' };
+        const r = await request('GET', '/api/admin/error-logs/users', { params });
+        const d = r.data?.data;
+        const first = d?.users?.[0];
+        const pass = r.status === 200 && Array.isArray(d?.users) && typeof d?.pagination?.total === 'number'
+            && (!first || Boolean(first.user_key && typeof first.total === 'number' && typeof first.unresolved === 'number' && first.last_error_at_ist?.display));
+        addResult({
+            name: 'Error Logs Per User', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs/users',
+            purpose: 'Errors grouped per platform user (user_id, else email): totals, unresolved, critical, last 24h, services, last error, enriched with Auth-DB user details.',
+            inputs: 'Query: page, limit, sort (most_errors | recent | unresolved | critical), service, severity, resolved, search, from, to',
+            curl: buildCurl('GET', '/api/admin/error-logs/users', {}, null, params),
+            expected: '200 + data.users[], data.pagination', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { limit: 10 };
+        const r = await request('GET', '/api/admin/error-logs/issues', { params });
+        const d = r.data?.data;
+        const first = d?.issues?.[0];
+        const pass = r.status === 200 && Array.isArray(d?.issues)
+            && (!first || Boolean(first.fingerprint && typeof first.count === 'number' && first.last_seen_ist?.display));
+        addResult({
+            name: 'Error Logs Issues (by fingerprint)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs/issues',
+            purpose: 'Distinct issues: rows grouped by fingerprint with count, unresolved, affected users, first/last seen.',
+            inputs: 'Query: limit, service, severity, category, resolved, user, search, from, to',
+            curl: buildCurl('GET', '/api/admin/error-logs/issues', {}, null, params),
+            expected: '200 + data.issues[]', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { resolved: 'all' };
+        const r = await request('GET', '/api/admin/error-logs/export', { params });
+        const body = typeof r.data === 'string' ? r.data : '';
+        const pass = r.status === 200 && body.includes('Occurred (IST)') && body.includes('Error message');
+        addResult({
+            name: 'Error Logs CSV Export', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs/export',
+            purpose: 'CSV download (UTF-8 BOM, IST columns) honouring the same filters as the list. Max 5000 rows.',
+            inputs: 'Query: same as list', curl: buildCurl('GET', '/api/admin/error-logs/export', {}, null, params),
+            expected: '200 text/csv with header row', actual: r.status, pass,
+            latency: r.latency, sample: body.slice(0, 600), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/error-logs/not-a-uuid');
+        addResult({
+            name: 'Error Log Detail (INVALID id — expect 400)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs/not-a-uuid',
+            purpose: 'Row ids are UUIDs; anything else is rejected before touching the DB.',
+            inputs: 'Path: id', curl: buildCurl('GET', '/api/admin/error-logs/not-a-uuid'),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const id = '00000000-0000-4000-8000-000000000000';
+        const r = await request('GET', `/api/admin/error-logs/${id}`);
+        addResult({
+            name: 'Error Log Detail (UNKNOWN id — expect 404)', group: 'Error Logs', method: 'GET', path: `/api/admin/error-logs/${id}`,
+            purpose: 'Unknown UUID returns NOT_FOUND.',
+            inputs: 'Path: id', curl: buildCurl('GET', `/api/admin/error-logs/${id}`),
+            expected: '404 NOT_FOUND', actual: r.status, pass: r.status === 404 && r.data?.error?.code === 'NOT_FOUND',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    if (errorLogId) {
+        {
+            const r = await request('GET', `/api/admin/error-logs/${errorLogId}`);
+            const d = r.data?.data;
+            const pass = r.status === 200 && d?.log?.id === errorLogId
+                && Object.prototype.hasOwnProperty.call(d.log, 'stack_trace')
+                && Object.prototype.hasOwnProperty.call(d.log, 'payload')
+                && Object.prototype.hasOwnProperty.call(d, 'audit')
+                && ['browser', 'server'].includes(d.log.origin) && typeof d.log.is_debug === 'boolean'
+                && Array.isArray(d?.related?.same_request) && Array.isArray(d?.related?.same_issue)
+                && Boolean(d?.log?.created_at_ist?.display);
+            addResult({
+                name: 'Error Log Detail', group: 'Error Logs', method: 'GET', path: `/api/admin/error-logs/${errorLogId}`,
+                purpose: 'Full row incl. stack trace, payload, external API response, issue summary (occurrences), the api_audit_logs row of the request, and related rows (same request id / same fingerprint).',
+                inputs: 'Path: id (UUID)', curl: buildCurl('GET', `/api/admin/error-logs/${errorLogId}`),
+                expected: '200 + data.log (with stack_trace, payload, origin), data.issue, data.audit, data.related', actual: r.status, pass,
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        }
+        {
+            const body = { resolved: true, note: 'automated test: resolved' };
+            const r = await request('PATCH', `/api/admin/error-logs/${errorLogId}/resolve`, { data: body });
+            const log = r.data?.data?.log;
+            const pass = r.status === 200 && log?.is_resolved === true && Boolean(log?.resolved_by) && Boolean(log?.resolved_at_ist?.display) && log?.resolution_note === body.note;
+            addResult({
+                name: 'Error Log Resolve', group: 'Error Logs', method: 'PATCH', path: `/api/admin/error-logs/${errorLogId}/resolve`,
+                purpose: 'Mark a single error resolved with a note; records resolved_by (admin email / admin-token) and resolved_at.',
+                inputs: 'Body: { resolved: true, note }', curl: buildCurl('PATCH', `/api/admin/error-logs/${errorLogId}/resolve`, {}, body),
+                expected: '200 + data.log.is_resolved=true', actual: r.status, pass,
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        }
+        {
+            const body = { resolved: false };
+            const r = await request('PATCH', `/api/admin/error-logs/${errorLogId}/resolve`, { data: body });
+            const log = r.data?.data?.log;
+            const pass = r.status === 200 && log?.is_resolved === false && log?.resolved_by === null && log?.resolved_at === null;
+            addResult({
+                name: 'Error Log Reopen', group: 'Error Logs', method: 'PATCH', path: `/api/admin/error-logs/${errorLogId}/resolve`,
+                purpose: 'resolved=false reopens the error and clears resolved_by / resolved_at / resolution_note.',
+                inputs: 'Body: { resolved: false }', curl: buildCurl('PATCH', `/api/admin/error-logs/${errorLogId}/resolve`, {}, body),
+                expected: '200 + data.log.is_resolved=false', actual: r.status, pass,
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        }
+        {
+            const body = { ids: [errorLogId], resolved: true, note: 'automated test: bulk' };
+            const r = await request('PATCH', '/api/admin/error-logs/resolve', { data: body });
+            const pass = r.status === 200 && r.data?.data?.changed === 1 && Array.isArray(r.data?.data?.ids);
+            addResult({
+                name: 'Error Logs Bulk Resolve (ids)', group: 'Error Logs', method: 'PATCH', path: '/api/admin/error-logs/resolve',
+                purpose: 'Resolve many rows at once by id list (or by fingerprint to close every occurrence of an issue).',
+                inputs: 'Body: { ids[] | fingerprint, resolved, note? }', curl: buildCurl('PATCH', '/api/admin/error-logs/resolve', {}, body),
+                expected: '200 + data.changed=1', actual: r.status, pass,
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        }
+        if (errorLogFingerprint) {
+            const body = { fingerprint: errorLogFingerprint, resolved: false };
+            const r = await request('PATCH', '/api/admin/error-logs/resolve', { data: body });
+            const pass = r.status === 200 && typeof r.data?.data?.changed === 'number' && r.data.data.changed >= 1;
+            addResult({
+                name: 'Error Logs Bulk Reopen (fingerprint)', group: 'Error Logs', method: 'PATCH', path: '/api/admin/error-logs/resolve',
+                purpose: 'Reopen every row sharing a fingerprint (restores the test row to unresolved).',
+                inputs: 'Body: { fingerprint, resolved: false }', curl: buildCurl('PATCH', '/api/admin/error-logs/resolve', {}, body),
+                expected: '200 + data.changed>=1', actual: r.status, pass,
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        } else {
+            // No fingerprint on the row: restore its original state by id instead.
+            await request('PATCH', `/api/admin/error-logs/${errorLogId}/resolve`, { data: { resolved: Boolean(errorLogWasResolved) } });
+        }
+        if (errorLogWasResolved === true) {
+            // The row was resolved before the tests ran; put it back.
+            await request('PATCH', `/api/admin/error-logs/${errorLogId}/resolve`, { data: { resolved: true, note: 'restored by automated test' } });
+        }
+    } else {
+        console.log('  ⚠️  No error log rows in the table — skipping detail / resolve tests');
+    }
+    {
+        const body = { resolved: true };
+        const r = await request('PATCH', '/api/admin/error-logs/resolve', { data: body });
+        addResult({
+            name: 'Error Logs Bulk Resolve (INVALID — expect 400)', group: 'Error Logs', method: 'PATCH', path: '/api/admin/error-logs/resolve',
+            purpose: 'Exactly one of ids[] or fingerprint is required.',
+            inputs: 'Body: { resolved: true } (no target)', curl: buildCurl('PATCH', '/api/admin/error-logs/resolve', {}, body),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_ERROR',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const body = { ids: ['not-a-uuid'] };
+        const r = await request('POST', '/api/admin/error-logs/bulk-delete', { data: body });
+        addResult({
+            name: 'Error Logs Bulk Delete (INVALID — expect 400)', group: 'Error Logs', method: 'POST', path: '/api/admin/error-logs/bulk-delete',
+            purpose: 'ids must be UUIDs; nothing is deleted on validation failure.',
+            inputs: 'Body: { ids: ["not-a-uuid"] }', curl: buildCurl('POST', '/api/admin/error-logs/bulk-delete', {}, body),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_ERROR',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const id = '00000000-0000-4000-8000-000000000000';
+        const r = await request('DELETE', `/api/admin/error-logs/${id}`);
+        addResult({
+            name: 'Error Log Delete (UNKNOWN id — expect 404)', group: 'Error Logs', method: 'DELETE', path: `/api/admin/error-logs/${id}`,
+            purpose: 'Deleting an unknown row returns NOT_FOUND. (Real rows are not deleted by the test run.)',
+            inputs: 'Path: id', curl: buildCurl('DELETE', `/api/admin/error-logs/${id}`),
+            expected: '404 NOT_FOUND', actual: r.status, pass: r.status === 404 && r.data?.error?.code === 'NOT_FOUND',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // J) Activity & Error Logs (api_audit_logs) — /api/admin/audit-logs
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('\n── J) Activity & Error Logs (api_audit_logs) ──');
+    let auditRowId = null;
+    let auditFailedId = null;
+    let auditFailedErrorLogId = null;
+    let auditUserEmail = null;
+    let auditDefaultTotal = null;
+    {
+        const r = await request('GET', '/api/admin/audit-logs/summary');
+        const d = r.data?.data;
+        const pass = r.status === 200 && r.data?.success === true
+            && typeof d?.totals?.calls === 'number' && typeof d?.totals?.failed === 'number' && typeof d?.totals?.failure_rate_pct === 'number'
+            && Array.isArray(d?.per_service) && Array.isArray(d?.top_endpoints) && Array.isArray(d?.top_users)
+            && Array.isArray(d?.daily_trend) && d?.period && Boolean(d?.generated_at_ist?.display);
+        addResult({
+            name: 'Audit Logs Summary', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs/summary',
+            purpose: 'Per-service calls / failed / failure rate / avg + p50 + p95 duration, top 20 APIs, top 20 users, breakdowns, daily trend (default: last 7 days, pings excluded).',
+            inputs: 'Query: from, to, since_hours, user, service, status, exclude_pings …', curl: buildCurl('GET', '/api/admin/audit-logs/summary'),
+            expected: '200 + data.totals, per_service[], top_endpoints[], top_users[]',
+            actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/audit-logs/meta');
+        const d = r.data?.data;
+        const pass = r.status === 200 && Array.isArray(d?.used?.services) && Array.isArray(d?.vocab?.statuses) && d?.defaults?.exclude_pings === true;
+        addResult({
+            name: 'Audit Logs Meta', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs/meta',
+            purpose: 'Distinct services, resource types, actions, HTTP methods, error types for filter dropdowns + defaults/limits.',
+            inputs: 'Headers: Authorization', curl: buildCurl('GET', '/api/admin/audit-logs/meta'),
+            expected: '200 + data.used.services[], data.vocab', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { page: 1, page_size: 20 };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        const d = r.data?.data;
+        const rows = d?.rows || [];
+        const first = rows[0];
+        const pass = r.status === 200 && Array.isArray(d?.rows) && typeof d?.total === 'number' && d?.page_size === 20
+            && d?.filters?.exclude_pings === true
+            && rows.every(x => x.endpoint !== '/api/auth/activity/ping' && !Object.prototype.hasOwnProperty.call(x, 'stack_trace'))
+            && (!first || Boolean(first.id && first.created_at_ist?.display && first.status && first.service_name));
+        addResult({
+            name: 'Audit Logs List', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'Paginated API-call list (last 7 days by default, activity pings hidden, newest first). Never includes stack_trace.',
+            inputs: 'Query: page, page_size (+ filters)', curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '200 + data.rows[], data.total, no ping rows, no stack_trace', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+        if (pass && first) {
+            auditRowId = first.id;
+            auditDefaultTotal = d.total;
+            auditUserEmail = (rows.find(x => x.user_email) || {}).user_email || null;
+        }
+    }
+    {
+        const params = { exclude_pings: 'false', page_size: 100 };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        const d = r.data?.data;
+        const pass = r.status === 200 && d?.filters?.exclude_pings === false && (auditDefaultTotal === null || d.total >= auditDefaultTotal);
+        addResult({
+            name: 'Audit Logs List (pings included)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'exclude_pings=false brings /api/auth/activity/ping rows back; total must be >= the default total.',
+            inputs: 'Query: exclude_pings=false', curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '200 + total >= default total', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { status: 'FAILED', page_size: 50 };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        const rows = r.data?.data?.rows || [];
+        const pass = r.status === 200 && rows.every(x => x.status === 'FAILED' && x.failed === true) && r.data?.data?.filters?.status === 'FAILED';
+        addResult({
+            name: 'Audit Logs List (FAILED only)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'status=FAILED returns only failed calls; these carry error_type / user_message / error_log_id.',
+            inputs: 'Query: status=FAILED', curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '200 + every row status=FAILED', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+        if (pass && rows.length) {
+            const withLink = rows.find(x => x.error_log_id) || rows[0];
+            auditFailedId = withLink.id;
+            auditFailedErrorLogId = withLink.error_log_id || null;
+        }
+    }
+    if (auditUserEmail) {
+        const params = { user: auditUserEmail, page_size: 50 };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        const rows = r.data?.data?.rows || [];
+        const needle = auditUserEmail.toLowerCase();
+        const pass = r.status === 200 && rows.length > 0 && rows.every(x => String(x.user_email || '').toLowerCase().includes(needle) || x.user_id === auditUserEmail);
+        addResult({
+            name: 'Audit Logs List (user filter)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'user=<email or id> narrows to one platform user (ILIKE on email, exact on id, resolved through the Auth DB).',
+            inputs: `Query: user=${auditUserEmail}`, curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '200 + only that user\'s rows', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { status: 'NOPE', from: 'yesterday' };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        addResult({
+            name: 'Audit Logs List (INVALID — expect 400)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'status must be SUCCESS | FAILED; from/to must be YYYY-MM-DD or ISO date-time.',
+            inputs: 'Query: status=NOPE&from=yesterday', curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_ERROR',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { status: 'FAILED', exclude_pings: 'false' };
+        const r = await request('GET', '/api/admin/audit-logs/export', { params });
+        const body = typeof r.data === 'string' ? r.data : '';
+        const pass = r.status === 200 && body.includes('Timestamp (IST)') && body.includes('Status') && body.includes('Error type');
+        addResult({
+            name: 'Audit Logs CSV Export', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs/export',
+            purpose: 'CSV with the same filters as the list (UTF-8 BOM, IST columns), max 50 000 rows.',
+            inputs: 'Query: same as list', curl: buildCurl('GET', '/api/admin/audit-logs/export', {}, null, params),
+            expected: '200 text/csv with header row', actual: r.status, pass,
+            latency: r.latency, sample: body.slice(0, 600), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/audit-logs/not-a-uuid');
+        addResult({
+            name: 'Audit Log Detail (INVALID id — expect 400)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs/not-a-uuid',
+            purpose: 'Row ids are UUIDs.', inputs: 'Path: id', curl: buildCurl('GET', '/api/admin/audit-logs/not-a-uuid'),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const id = '00000000-0000-4000-8000-000000000000';
+        const r = await request('GET', `/api/admin/audit-logs/${id}`);
+        addResult({
+            name: 'Audit Log Detail (UNKNOWN id — expect 404)', group: 'Audit Logs', method: 'GET', path: `/api/admin/audit-logs/${id}`,
+            purpose: 'Unknown UUID returns NOT_FOUND.', inputs: 'Path: id', curl: buildCurl('GET', `/api/admin/audit-logs/${id}`),
+            expected: '404 NOT_FOUND', actual: r.status, pass: r.status === 404 && r.data?.error?.code === 'NOT_FOUND',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const id = auditFailedId || auditRowId;
+        if (id) {
+            const r = await request('GET', `/api/admin/audit-logs/${id}`);
+            const d = r.data?.data;
+            const linkOk = !auditFailedErrorLogId || id !== auditFailedId || (d?.error && d.error.id === auditFailedErrorLogId && Object.prototype.hasOwnProperty.call(d.error, 'stack_trace'));
+            const pass = r.status === 200 && d?.audit?.id === id
+                && Object.prototype.hasOwnProperty.call(d.audit, 'stack_trace')
+                && Object.prototype.hasOwnProperty.call(d, 'error') && Array.isArray(d?.errors) && linkOk;
+            addResult({
+                name: 'Audit Log Detail', group: 'Audit Logs', method: 'GET', path: `/api/admin/audit-logs/${id}`,
+                purpose: 'Full row incl. stack_trace and payload, plus the linked error_logs row(s) (error_log_id / payload.error_log_ids) with their stack traces.',
+                inputs: 'Path: id (UUID)', curl: buildCurl('GET', `/api/admin/audit-logs/${id}`),
+                expected: '200 + data.audit (with stack_trace), data.error (linked error_logs row or null), data.errors[]', actual: r.status, pass,
+                latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        } else {
+            console.log('  ⚠️  No api_audit_logs rows in the last 7 days — skipping detail test');
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
     // G) Authentication Negative Tests
     // ════════════════════════════════════════════════════════════════════════
     console.log('\n── G) Auth Negative Tests ──');

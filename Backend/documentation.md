@@ -21,6 +21,8 @@ Portal roles (`super-admin`, `user-admin`, `account-admin`, `finance-admin`, `ma
 | Plan Analytics | `/api/admin/plan-analytics` | Payment DB + Auth DB |
 | Demo Bookings | `/api/admin/demo` | Auth / demo tables |
 | Contact Enquiries (Marketing) | `/api/admin/contact-enquiries` | Auth DB (`contact_enquiries`) — see [H](#h-contact-enquiries-marketing) |
+| Error Logs (Platform) | `/api/admin/error-logs` | Document_DB (`error_logs`) + Auth DB (user lookup) — see [I](#i-error-logs-platform) / [docs/ERROR_LOGS_API.md](../docs/ERROR_LOGS_API.md) |
+| Activity & Error Logs | `/api/admin/audit-logs` | Document_DB (`api_audit_logs`, one row per API call) + Auth DB (user lookup) — see [J](#j-activity--error-logs-api_audit_logs) / [docs/ERROR_LOGS_API.md §7](../docs/ERROR_LOGS_API.md) |
 | Public contact-form intake | `/api/public/contact` | Auth DB — **no auth**, rate-limited, own CORS |
 | Health Check | `/api/admin/health` | Main DB + Citation DB |
 
@@ -616,6 +618,65 @@ Stamps `first_contacted_at` (earliest attempt), `last_contacted_at`, `last_conta
 ### `DELETE /api/admin/contact-enquiries/:id`
 
 Super-admin / static token only. Marketing admins get `403` — use status `spam` or `closed`.
+
+---
+
+## I) Error Logs (Platform)
+
+Every backend service (Python and Node) records the errors its users hit in **one shared table**:
+`public.error_logs` in **Document_DB** (the same database `DOCDB_URL` points at), owned by
+agentic-document-service. This backend reads, resolves and deletes those rows under
+`/api/admin/error-logs` (roles: `super-admin`, `admin`, or the static `ADMIN_TOKEN`).
+
+**Full reference with request bodies and captured responses for every endpoint:
+[docs/ERROR_LOGS_API.md](../docs/ERROR_LOGS_API.md).**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/admin/error-logs/stats` | KPIs, 14-day trend, breakdowns by service / category / source / severity / status, top issues, top endpoints, top users, latest unresolved |
+| GET | `/api/admin/error-logs/meta` | Filter vocabulary + values actually present + permissions |
+| GET | `/api/admin/error-logs` | Paginated list. Filters: `service`, `environment`, `source`, `category`, `severity`, `status_code`, `status_class`, `error_type`, `provider`, `user`, `user_id`, `user_email`, `request_id`, `fingerprint`, `endpoint`, `route`, `method`, `resolved`, `has_user`, `origin` (browser / server), `exclude_debug`, `search`, `from`, `to`, `since_hours`, `sort` |
+| GET | `/api/admin/error-logs/export` | CSV of the same list (max 5000 rows, IST columns) |
+| GET | `/api/admin/error-logs/users` | Errors grouped per user, enriched from the Auth DB `users` table |
+| GET | `/api/admin/error-logs/issues` | Errors grouped per fingerprint |
+| GET | `/api/admin/error-logs/:id` | Full row: stack trace, payload, external API response, issue summary, the request's `api_audit_logs` row (action / method / resource / duration), related rows |
+| PATCH | `/api/admin/error-logs/:id/resolve` | `{ resolved, note? }` — resolve / reopen one row |
+| PATCH | `/api/admin/error-logs/resolve` | `{ ids[] | fingerprint, resolved, note? }` — resolve / reopen many |
+| DELETE | `/api/admin/error-logs/:id` | Delete one row |
+| POST | `/api/admin/error-logs/bulk-delete` | `{ ids[] | fingerprint }` — delete many |
+
+Everything a user hit: `GET /api/admin/error-logs?user=<user_id or email>` — the value is resolved through the Auth DB, so an
+email also finds rows that only recorded the user id (and vice versa). Rows that recorded only a `user_id` come back with
+`user_email` filled from the Auth DB (`user_email_source: "auth_db"`) plus `user_name`.
+All timestamps come as UTC ISO plus an `*_ist` object (same shape as section H).
+Rows carry `origin` (`server` / `browser` for frontend-reported errors, with `client.kind` / `flow` / `page`), the route
+template `route`, and `recovered` / `attempts` / `after_response_start` / `related_count` lifted from `payload`, matching the
+"Central error logging" service documentation.
+If the table does not exist yet the endpoints answer `503 ERROR_LOGS_TABLE_MISSING`.
+
+---
+
+## J) Activity & Error Logs (`api_audit_logs`)
+
+One row per API call across every backend service (plus one row per out-of-request error: jobs, process
+crashes, browser reports, failed payments), in **Document_DB** → `api_audit_logs`, owned by
+agentic-document-service (migrations 184–186). Successful calls have empty error columns; failed ones carry
+`error_type` / `error_message` / `user_message` / `stack_trace` and `error_log_id` → `error_logs.id`.
+Read-only here. Roles: `super-admin`, `admin`, or the static `ADMIN_TOKEN`.
+
+**Full reference with request parameters and captured responses: [docs/ERROR_LOGS_API.md §7](../docs/ERROR_LOGS_API.md).**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/admin/audit-logs/summary` | Per service: calls, failed, failure rate, avg / p50 / p95 duration; top 20 APIs; top 20 users; breakdowns by action, resource type, status code; daily trend; most used API |
+| GET | `/api/admin/audit-logs/meta` | Distinct services, resource types, actions, HTTP methods, error types + defaults / limits |
+| GET | `/api/admin/audit-logs` | Paginated list (`page`, `page_size` ≤ 200, default 50), newest first. Filters: `from`, `to` (IST day or ISO), `since_hours`, `user`, `service`, `environment`, `status` (SUCCESS / FAILED), `method`, `endpoint` (prefix), `route`, `resource_type`, `action`, `request_id`, `error_log_id`, `error_type`, `status_code`, `status_class`, `q`, `exclude_pings` (default true), `kind`, `min_duration_ms`, `sort`. Never returns `stack_trace`. |
+| GET | `/api/admin/audit-logs/export` | CSV, same filters, max 50 000 rows |
+| GET | `/api/admin/audit-logs/:id` | Full row incl. `stack_trace` + the linked `error_logs` row(s) |
+
+Default window is the last 7 days; `/api/auth/activity/ping` rows are hidden unless `exclude_pings=false`.
+Rows carry `kind` (`request` / `browser` / `job`), `api` (`"GET /api/files/folders"`), `status_class`, `duration_display`,
+`error_log_ids` and the Auth-DB-enriched `user` / `user_name`, like the error-log rows.
 
 ---
 
