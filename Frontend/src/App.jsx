@@ -32,6 +32,7 @@ import AddJudge from './pages/dashboard/content/AddJudge';
 import VoiceManagementPage from './features/jurinex-voice/pages/VoiceManagementPage';
 import RoleManagement from './pages/dashboard/RoleManagement';
 import Settings from './pages/dashboard/Settings';
+import AuditLogs from './pages/dashboard/AuditLogs';
 import { createDebugLogger } from './utils/debugLogger';
 import './App.css';
 import './index.css';
@@ -143,6 +144,7 @@ function App() {
             <Route path="contact-enquiries" element={<RequireRole allow={['marketing-admin']}><ContactEnquiries /></RequireRole>} />
             <Route path="newsletter-subscribers" element={<RequireRole allow={['marketing-admin']}><NewsletterSubscribers /></RequireRole>} />
             <Route path="offers-events" element={<RequireRole allow={['marketing-admin']}><MarketingPromos /></RequireRole>} />
+            <Route path="audit-logs" element={<RequireRole allow={[]}><AuditLogs /></RequireRole>} />
             <Route path="judgements" element={<RequireRole allow={[]}><JudgementManagement /></RequireRole>} />
             <Route path="judgement-search" element={<RequireRole allow={[]}><JudgementSearch /></RequireRole>} />
             <Route path="citation-management" element={<RequireRole allow={[]}><CitationManagement /></RequireRole>} />

@@ -29,6 +29,7 @@ import {
   Mail,
   Megaphone,
   Contact,
+  Activity,
 } from 'lucide-react';
 import { createDebugLogger } from '../../utils/debugLogger';
 
@@ -155,6 +156,12 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
       path: '/dashboard/offers-events',
       icon: Megaphone,
       roles: ['super-admin', 'marketing-admin']
+    },
+    {
+      name: 'Audit Logs',
+      path: '/dashboard/audit-logs',
+      icon: Activity,
+      roles: ['super-admin']
     },
     {
       name: 'Judgement Upload',
