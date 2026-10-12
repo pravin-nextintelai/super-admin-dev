@@ -635,13 +635,14 @@ agentic-document-service. This backend reads, resolves and deletes those rows un
 |---|---|---|
 | GET | `/api/admin/error-logs/stats` | KPIs, 14-day trend, breakdowns by service / category / source / severity / status, top issues, top endpoints, top users, latest unresolved |
 | GET | `/api/admin/error-logs/meta` | Filter vocabulary + values actually present + permissions |
-| GET | `/api/admin/error-logs` | Paginated list. Filters: `service`, `environment`, `source`, `category`, `severity`, `status_code`, `status_class`, `error_type`, `provider`, `user`, `user_id`, `user_email`, `request_id`, `fingerprint`, `endpoint`, `route`, `method`, `resolved`, `has_user`, `origin` (browser / server), `exclude_debug`, `search`, `from`, `to`, `since_hours`, `sort` |
+| GET | `/api/admin/error-logs` | Paginated list. Filters: `service`, `environment`, `source`, `category`, `severity`, `status_code`, `status_class`, `error_type`, `provider`, `user`, `user_id`, `user_email`, `request_id`, `fingerprint`, `endpoint`, `route`, `method`, `http_method`, `resolved` (alias `is_resolved`), `has_user`, `origin` (browser / server), `exclude_debug`, `search` (alias `q`), `from`, `to`, `since_hours`, `sort`. Also `error_code` (csv). Rows include `error_code`, `what_happened`, `error_summary`, `suggested_fix` (plain-language explanation, migrations 187–188). |
 | GET | `/api/admin/error-logs/export` | CSV of the same list (max 5000 rows, IST columns) |
 | GET | `/api/admin/error-logs/users` | Errors grouped per user, enriched from the Auth DB `users` table |
 | GET | `/api/admin/error-logs/issues` | Errors grouped per fingerprint |
 | GET | `/api/admin/error-logs/:id` | Full row: stack trace, payload, external API response, issue summary, the request's `api_audit_logs` row (action / method / resource / duration), related rows |
 | PATCH | `/api/admin/error-logs/:id/resolve` | `{ resolved, note? }` — resolve / reopen one row |
 | PATCH | `/api/admin/error-logs/resolve` | `{ ids[] | fingerprint, resolved, note? }` — resolve / reopen many |
+| PATCH | `/api/admin/error-logs/resolve-fingerprint` | `{ fingerprint, resolved_by?, resolution_note? }` — close every open occurrence of an issue |
 | DELETE | `/api/admin/error-logs/:id` | Delete one row |
 | POST | `/api/admin/error-logs/bulk-delete` | `{ ids[] | fingerprint }` — delete many |
 
@@ -670,13 +671,45 @@ Read-only here. Roles: `super-admin`, `admin`, or the static `ADMIN_TOKEN`.
 |---|---|---|
 | GET | `/api/admin/audit-logs/summary` | Per service: calls, failed, failure rate, avg / p50 / p95 duration; top 20 APIs; top 20 users; breakdowns by action, resource type, status code; daily trend; most used API |
 | GET | `/api/admin/audit-logs/meta` | Distinct services, resource types, actions, HTTP methods, error types + defaults / limits |
-| GET | `/api/admin/audit-logs` | Paginated list (`page`, `page_size` ≤ 200, default 50), newest first. Filters: `from`, `to` (IST day or ISO), `since_hours`, `user`, `service`, `environment`, `status` (SUCCESS / FAILED), `method`, `endpoint` (prefix), `route`, `resource_type`, `action`, `request_id`, `error_log_id`, `error_type`, `status_code`, `status_class`, `q`, `exclude_pings` (default true), `kind`, `min_duration_ms`, `sort`. Never returns `stack_trace`. |
+| GET | `/api/admin/audit-logs` | Paginated list (`page`, `page_size` ≤ 200, default 50), newest first, default window last 24 h. Filters: `error_code`, `from`, `to` (IST day or ISO), `since_hours`, `user`, `service`, `environment`, `status` (SUCCESS / FAILED), `method`, `endpoint` (prefix), `route`, `resource_type`, `action`, `request_id`, `error_log_id`, `error_type`, `status_code`, `status_class`, `q`, `exclude_pings` (default true), `kind`, `min_duration_ms`, `sort`. Never returns `stack_trace`. |
 | GET | `/api/admin/audit-logs/export` | CSV, same filters, max 50 000 rows |
-| GET | `/api/admin/audit-logs/:id` | Full row incl. `stack_trace` + the linked `error_logs` row(s) |
+| GET | `/api/admin/audit-logs/:id` | Full row incl. `stack_trace`, the linked `error_logs` row(s), `same_request` / `request_trace` (the same request across services), `recurrences` (same fingerprint, last 7 days), and the linked error's stack / classification copied onto `audit` |
 
 Default window is the last 7 days; `/api/auth/activity/ping` rows are hidden unless `exclude_pings=false`.
 Rows carry `kind` (`request` / `browser` / `job`), `api` (`"GET /api/files/folders"`), `status_class`, `duration_display`,
 `error_log_ids` and the Auth-DB-enriched `user` / `user_name`, like the error-log rows.
+
+## K) Sales Referrals (`/api/admin/sales-referrals`)
+
+Sales owners, referral codes and signup attribution, stored in the **Auth / Main DB**
+(`sales_owners`, `referral_codes`, `tenant_referrals`, `tenant_referral_history`; workspaces are `firms`).
+Nothing is ever deleted — owners and codes are retired by status. Roles: `super-admin`, `admin`, or the static `ADMIN_TOKEN`.
+Alias base path: `/api/v1/admin/sales-referrals`.
+
+**Full reference with request / response shapes, error codes and implementation notes: [docs/sales-referrals-admin-api.md](../docs/sales-referrals-admin-api.md).**
+
+| # | Method | Path | Purpose |
+|---|---|---|---|
+| A1 | POST | `/owners` | Create owner + 1–10 codes (atomic) |
+| A2 | PUT | `/owners/:ownerId` | Update name / internal / notes |
+| A3 | GET | `/owners/:ownerId` | Owner profile with every code + `codeCounts` |
+| A4 | POST | `/owners/:ownerId/codes` | Add one code |
+| A5 | PATCH | `/codes/:codeId` | Edit label only |
+| A6 | POST | `/codes/:codeId/deactivate` | Stop accepting signups (idempotent) |
+| A7 | POST | `/codes/:codeId/activate` | Re-enable (refreshed codes → `409 REFERRAL_CODE_REPLACED`) |
+| A8 | POST | `/codes/:codeId/refresh` | Retire + issue replacement with same owner / label |
+| A9 | GET | `/codes/suggest` | `ownerName` or `ownerId`, `count` 1–10, `exclude` csv → available suggestions |
+| A10 | GET | `/codes/availability?code=` | Always 200: `AVAILABLE` / `TAKEN` / `INVALID_FORMAT` |
+| A11 | GET | `/codes` | Picker search grouped by owner (`search`, `includeInactive`, `limit` ≤ 50) |
+| A12 | GET | `/reports/summary` | Six cards (`from`, `to`, `type`) + `trackingSince` |
+| A13 | GET | `/reports/owners` | Owners table + Direct row (`search`, `sort`, `direction`) |
+| A14 | GET | `/reports/owners/:ownerId/codes` | Per-code breakdown + totals |
+| A15 | GET | `/reports/signups` | Workspaces under `codeId` / `ownerId` / `direct=true`; `status`, `search`, `page` (0-based), `size` |
+| A16 | PUT | `/tenants/:tenantId/referral` | `{ codeId, reason }` — attach / change a workspace's code (history kept) |
+| A17 | GET | `/tenants/:tenantId/referral`, `/users/:userId/referral` | Referral block for the user-detail card |
+
+Env: `REFERRALS_TRACKING_SINCE` (go-live date), `REFERRALS_FREE_PLAN_NAMES` (default `Free,Free Trial,Trial`).
+Migration: `npm run migrate:sales-referrals` (also applied automatically at server start).
 
 ---
 

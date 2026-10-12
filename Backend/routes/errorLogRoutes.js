@@ -63,6 +63,7 @@ const router = (pool, docPool) => {
 
   // Bulk operations (static paths must be registered before /:id)
   r.patch('/resolve', auth, canResolve, ctrl.resolveBulk);
+  r.patch('/resolve-fingerprint', auth, canResolve, ctrl.resolveFingerprint);
   r.post('/bulk-delete', auth, canDelete, ctrl.deleteBulk);
 
   // Single row

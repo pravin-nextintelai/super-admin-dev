@@ -19,7 +19,9 @@ const PING_ENDPOINT = '/api/auth/activity/ping';
 const STATUSES = ['SUCCESS', 'FAILED'];
 const ACTIONS = ['VIEW', 'CREATE', 'UPDATE', 'DELETE'];
 const KINDS = ['request', 'job', 'browser'];
-const SORT_OPTIONS = ['newest', 'oldest', 'slowest', 'status', 'service', 'user'];
+const SORT_OPTIONS = ['newest', 'oldest', 'slowest', 'status', 'service', 'user', 'created_at', 'duration_ms'];
+/** Spec aliases: created_at → newest, duration_ms → slowest. */
+const SORT_ALIASES = { created_at: 'newest', duration_ms: 'slowest' };
 const SUMMARY_TOP_N = 20;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -57,7 +59,7 @@ const LIST_COLUMNS = `
   a.user_id, a.user_email, a.ip_address, a.user_agent,
   a.http_method, a.endpoint, a.route, a.action, a.resource_type, a.resource_id, a.method,
   a.status, a.status_code, a.duration_ms,
-  a.error_log_id, a.error_type, a.error_message, a.user_message,
+  a.error_log_id, a.error_type, a.error_message, a.user_message, a.error_summary, a.error_code, a.what_happened, a.suggested_fix,
   (a.stack_trace IS NOT NULL AND a.stack_trace <> '') AS has_stack_trace,
   a.payload
 `;
@@ -119,6 +121,11 @@ function serializeAudit(row, { now = new Date(), full = false, user = null } = {
     error_type: row.error_type || null,
     error_message: row.error_message || null,
     user_message: row.user_message || null,
+    error_summary: row.error_summary || null, // WHY, plain language (migration 187); null on success
+    error_code: row.error_code || null, // AUTH_EXPIRED, NOT_FOUND, … (migration 188)
+    what_happened: row.what_happened || null, // WHAT, plain language (migration 188)
+    suggested_fix: row.suggested_fix || null, // (migration 188)
+    display: pl.display || null, // "toast" | "banner" | "inline" when the browser reported how the message was shown
     has_stack_trace: full ? Boolean(row.stack_trace) : Boolean(row.has_stack_trace),
 
     // Optional classification the services may put in payload (source / category / severity / provider)
@@ -163,6 +170,7 @@ function buildFilters(f = {}) {
   anyOf('a.http_method', f.methods);
   anyOf('a.resource_type', f.resource_types);
   anyOf('a.action', f.actions);
+  anyOf('a.error_code', f.error_codes);
   anyOf('a.status_code', f.status_codes, 'int[]');
 
   if (f.status) where.push(`a.status = ${p(String(f.status).toUpperCase())}`);
@@ -199,6 +207,9 @@ function buildFilters(f = {}) {
       OR COALESCE(a.method, '')     ILIKE ${like}
       OR COALESCE(a.error_type, '') ILIKE ${like}
       OR COALESCE(a.error_message, '') ILIKE ${like}
+      OR COALESCE(a.error_summary, '') ILIKE ${like}
+      OR COALESCE(a.what_happened, '') ILIKE ${like}
+      OR COALESCE(a.error_code, '')    ILIKE ${like}
       OR COALESCE(a.user_message, '')  ILIKE ${like}
       OR COALESCE(a.user_email, '') ILIKE ${like}
       OR COALESCE(a.request_id, '') ILIKE ${like}
@@ -210,7 +221,7 @@ function buildFilters(f = {}) {
 }
 
 function sortSql(sort) {
-  switch (sort) {
+  switch (SORT_ALIASES[sort] || sort) {
     case 'oldest':
       return 'a.created_at ASC, a.id ASC';
     case 'slowest':
@@ -253,6 +264,16 @@ async function getAuditById(docPool, id) {
   return rows[0] || null;
 }
 
+/** Every audit row of one request across services (follow the x-request-id), oldest first. */
+async function getRequestTrace(docPool, requestId, { limit = 50 } = {}) {
+  if (!requestId) return [];
+  const { rows } = await docPool.query(
+    `SELECT ${LIST_COLUMNS} FROM api_audit_logs a WHERE a.request_id = $1 ORDER BY a.created_at ASC, a.id ASC LIMIT $2`,
+    [requestId, limit]
+  );
+  return rows;
+}
+
 /**
  * The error_logs rows behind a FAILED audit row: `error_log_id` plus any extra ids in
  * `payload.error_log_ids`. Returns [] when none / the error table is absent. Never throws.
@@ -279,7 +300,7 @@ async function getSummary(docPool, filters = {}) {
   const { whereSql, values } = buildFilters(filters);
   const top = SUMMARY_TOP_N;
 
-  const [totals, perService, topEndpoints, topUsers, byAction, byResource, byStatusCode, byEnv, trend, slowest] = await Promise.all([
+  const [totals, perService, topEndpoints, topUsers, byAction, byResource, byStatusCode, byEnv, trend, slowest, reasons] = await Promise.all([
     docPool.query(
       `SELECT COUNT(*)::int AS calls,
               COUNT(*) FILTER (WHERE a.status = 'FAILED')::int AS failed,
@@ -387,9 +408,22 @@ async function getSummary(docPool, filters = {}) {
        ORDER BY a.duration_ms DESC LIMIT 5`,
       values
     ),
+    // Most common plain-language reasons among FAILED rows (error_summary, migration 187)
+    docPool.query(
+      `SELECT a.error_summary AS value, a.error_summary, a.error_code, COUNT(*)::int AS n, COUNT(*)::int AS failed,
+              COUNT(DISTINCT ${USER_KEY_SQL}) FILTER (WHERE ${HAS_USER_SQL})::int AS users,
+              COUNT(DISTINCT a.service_name)::int AS services,
+              (array_agg(a.error_type ORDER BY a.created_at DESC) FILTER (WHERE a.error_type IS NOT NULL))[1] AS error_type,
+              MAX(a.created_at) AS last_seen
+       FROM api_audit_logs a
+       ${whereSql ? `${whereSql} AND` : 'WHERE'} a.status = 'FAILED' AND (a.error_summary IS NOT NULL OR a.error_code IS NOT NULL)
+       GROUP BY 1, 2, 3 ORDER BY failed DESC LIMIT 10`,
+      values
+    ),
   ]);
 
   return {
+    top_reasons: reasons.rows,
     totals: totals.rows[0],
     per_service: perService.rows,
     top_endpoints: topEndpoints.rows,
@@ -438,11 +472,13 @@ module.exports = {
   ACTIONS,
   KINDS,
   SORT_OPTIONS,
+  SORT_ALIASES,
   SUMMARY_TOP_N,
   serializeAudit,
   buildFilters,
   listAudit,
   getAuditById,
+  getRequestTrace,
   getLinkedErrors,
   getSummary,
   getMeta,

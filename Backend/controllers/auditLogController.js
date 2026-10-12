@@ -22,7 +22,7 @@ const LAYER = 'AUDIT_LOGS';
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 const MAX_EXPORT_ROWS = 50000;
-const DEFAULT_WINDOW_HOURS = 24 * 7;
+const DEFAULT_WINDOW_HOURS = 24; // spec: default last 24h when neither from nor since_hours is given
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -109,6 +109,7 @@ const commonFilters = {
   environment: Joi.string().trim().max(200).allow(''),
   status: Joi.string().trim().uppercase().valid(...svc.STATUSES, 'ALL', ''),
   method: Joi.string().trim().max(100).allow(''),
+  http_method: Joi.string().trim().max(100).allow(''), // alias of method (HTTP verbs, csv)
   endpoint: Joi.string().trim().max(500).allow(''),
   route: Joi.string().trim().max(500).allow(''),
   resource_type: Joi.string().trim().max(500).allow(''),
@@ -116,6 +117,7 @@ const commonFilters = {
   request_id: Joi.string().trim().max(64).allow(''),
   error_log_id: Joi.string().trim().pattern(UUID_RE).allow('').messages({ 'string.pattern.base': '"error_log_id" must be a UUID' }),
   error_type: Joi.string().trim().max(255).allow(''),
+  error_code: Joi.string().trim().max(500).allow(''), // csv, e.g. AUTH_EXPIRED,NOT_FOUND
   status_code: Joi.string().trim().max(200).allow(''),
   status_class: Joi.string().trim().lowercase().valid('2xx', '3xx', '4xx', '5xx').allow(''),
   q: Joi.string().trim().max(200).allow(''),
@@ -172,7 +174,7 @@ function makeControllers(pool, docPool) {
       services: csv(q.service),
       environments: csv(q.environment),
       status: q.status && q.status !== 'ALL' ? q.status : undefined,
-      methods: csv(q.method, { upper: true }),
+      methods: csv(q.method || q.http_method, { upper: true }),
       endpoint: q.endpoint || undefined,
       route: q.route || undefined,
       resource_types: csv(q.resource_type).map((s) => s.toUpperCase()),
@@ -180,6 +182,7 @@ function makeControllers(pool, docPool) {
       request_id: q.request_id || undefined,
       error_log_id: q.error_log_id ? q.error_log_id.toLowerCase() : undefined,
       error_type: q.error_type || undefined,
+      error_codes: csv(q.error_code, { upper: true }),
       status_codes: codes,
       status_class: q.status_class || undefined,
       q: q.q || undefined,
@@ -215,6 +218,7 @@ function makeControllers(pool, docPool) {
       request_id: filters.request_id || null,
       error_log_id: filters.error_log_id || null,
       error_type: filters.error_type || null,
+      error_code: filters.error_codes.length ? filters.error_codes : 'all',
       status_code: codes.length ? codes : 'all',
       status_class: filters.status_class || null,
       q: filters.q || null,
@@ -303,9 +307,13 @@ function makeControllers(pool, docPool) {
         { header: 'IP address', key: 'ip_address' },
         { header: 'User agent', key: 'user_agent' },
         { header: 'Request id', key: 'request_id' },
+        { header: 'Error code', key: 'error_code' },
+        { header: 'What happened', key: 'what_happened' },
+        { header: 'Reason', key: 'error_summary' },
         { header: 'Error type', key: 'error_type' },
         { header: 'Error message', key: 'error_message' },
         { header: 'User message', key: 'user_message' },
+        { header: 'Suggested fix', key: 'suggested_fix' },
         { header: 'Error log id', key: 'error_log_id' },
         { header: 'Timestamp (UTC)', key: 'created_at' },
       ];
@@ -397,6 +405,7 @@ function makeControllers(pool, docPool) {
             failure_rate_pct: pct(r.failed, r.calls),
           };
         }),
+        top_reasons: s.top_reasons.map((r) => withIst(r, ['last_seen'])),
         by_action: s.by_action,
         by_resource_type: s.by_resource_type,
         by_status_code: s.by_status_code,
@@ -445,17 +454,31 @@ function makeControllers(pool, docPool) {
       if (!row) return fail(req, res, 404, 'NOT_FOUND', 'Audit log not found');
 
       const now = new Date();
-      const linked = await svc.getLinkedErrors(docPool, row, logger);
-      const maps = await errorLogs.enrichRows(pool, [row, ...linked], logger);
+      const [linked, traceRows] = await Promise.all([svc.getLinkedErrors(docPool, row, logger), svc.getRequestTrace(docPool, row.request_id)]);
+      const maps = await errorLogs.enrichRows(pool, [row, ...linked, ...traceRows], logger);
       const audit = svc.serializeAudit(row, { now, full: true, user: errorLogs.resolveUserFor(row, maps) });
       const errors = linked.map((e) => errorLogs.serializeLog(e, { now, full: true, user: errorLogs.resolveUserFor(e, maps) }));
       const primary = errors.find((e) => e.id === row.error_log_id) || errors[0] || null;
+      // Every audit row of the same request across services (incl. this one), oldest first
+      const requestTrace = traceRows.map((r) => svc.serializeAudit(r, { now, user: errorLogs.resolveUserFor(r, maps) }));
+      // Spec shape: the OTHER rows of the request, compact
+      const sameRequest = requestTrace
+        .filter((r) => r.id !== audit.id)
+        .map((r) => ({ id: r.id, service_name: r.service_name, http_method: r.http_method, endpoint: r.endpoint, route: r.route, status: r.status, status_code: r.status_code, duration_ms: r.duration_ms, error_code: r.error_code, created_at: r.created_at, created_at_ist: r.created_at_ist }));
+      const recurrences = await errorLogs.getRecurrences(docPool, primary?.fingerprint || null, { days: 7 });
+      // Fallbacks the drawer needs: the stack / payload / classification of the linked error when the audit row has none
+      const errorFields = primary
+        ? { error_stack: primary.stack_trace, error_payload: primary.payload, source: primary.source, category: primary.category, severity: primary.severity, external: primary.external, latency_ms: primary.latency_ms, fingerprint: primary.fingerprint, is_resolved: primary.is_resolved, resolved_by: primary.resolved_by, resolved_at: primary.resolved_at, resolved_at_ist: primary.resolved_at_ist, resolution_note: primary.resolution_note }
+        : { error_stack: null, error_payload: null, source: audit.source, category: audit.category, severity: audit.severity, external: null, latency_ms: null, fingerprint: null, is_resolved: null, resolved_by: null, resolved_at: null, resolved_at_ist: null, resolution_note: null };
 
       logPortalFlow(req, 'Audit log detail loaded', {
         layer: LAYER,
-        summary: { id, service: audit.service_name, api: audit.api, status: audit.status, code: audit.status_code, user: audit.user_email, linkedErrors: errors.length },
+        summary: { id, service: audit.service_name, api: audit.api, status: audit.status, code: audit.status_code, user: audit.user_email, linkedErrors: errors.length, trace: requestTrace.length, recurrences: recurrences.count },
       });
-      return res.json({ success: true, data: { audit, error: primary, errors, timezone: IST_TIMEZONE } });
+      return res.json({
+        success: true,
+        data: { audit: { ...audit, ...errorFields }, error: primary, errors, same_request: sameRequest, request_trace: requestTrace, recurrences, timezone: IST_TIMEZONE },
+      });
     } catch (err) {
       return serverError(req, res, 'Failed to load audit log', err);
     }

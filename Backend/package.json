@@ -13,6 +13,7 @@
     "migrate:contact-enquiries": "node migrations/run_contact_enquiries_migration.js",
     "migrate:newsletter-subscribers": "node migrations/run_newsletter_subscribers_migration.js",
     "migrate:marketing-promos": "node migrations/run_marketing_promos_migration.js",
+    "migrate:sales-referrals": "node migrations/run_sales_referrals_migration.js",
     "repair:citation-usd": "node migrations/repair_missing_cost_usd.js",
     "migrate:jurinex-voice": "node modules/jurinex-voice/db/migrate.js"
   },

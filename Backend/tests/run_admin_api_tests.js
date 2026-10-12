@@ -626,6 +626,19 @@ async function runTests() {
         });
     }
     {
+        const params = { q: 'zzz-no-such-error-zzz', is_resolved: 'false', http_method: 'GET,POST' };
+        const r = await request('GET', '/api/admin/error-logs', { params });
+        const f = r.data?.data?.filters;
+        const pass = r.status === 200 && f?.search === 'zzz-no-such-error-zzz' && f?.resolved === false && Array.isArray(f?.http_method) && f.http_method.includes('GET');
+        addResult({
+            name: 'Error Logs List (spec alias filters)', group: 'Error Logs', method: 'GET', path: '/api/admin/error-logs',
+            purpose: 'q, is_resolved, http_method (and external_provider) are accepted as aliases and echoed back as search / resolved / http_method.',
+            inputs: 'Query: q, is_resolved, http_method', curl: buildCurl('GET', '/api/admin/error-logs', {}, null, params),
+            expected: '200 + filters.search, filters.resolved=false, filters.http_method[]', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
         const params = { search: 'zzz-no-such-error-zzz' };
         const r = await request('GET', '/api/admin/error-logs', { params });
         const pass = r.status === 200 && Array.isArray(r.data?.data?.logs) && r.data.data.logs.length === 0 && r.data?.data?.pagination?.total === 0;
@@ -793,6 +806,21 @@ async function runTests() {
                 expected: '200 + data.changed>=1', actual: r.status, pass,
                 latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
             });
+            {
+                const body = { fingerprint: errorLogFingerprint, resolved_by: 'api-test@jurinex', resolution_note: 'automated test: resolve-fingerprint' };
+                const rr = await request('PATCH', '/api/admin/error-logs/resolve-fingerprint', { data: body });
+                const d = rr.data?.data;
+                const ok = rr.status === 200 && d?.resolved === true && d?.resolved_by === 'api-test@jurinex' && typeof d?.changed === 'number' && d?.occurrences?.unresolved === 0;
+                addResult({
+                    name: 'Error Logs Resolve by Fingerprint', group: 'Error Logs', method: 'PATCH', path: '/api/admin/error-logs/resolve-fingerprint',
+                    purpose: 'Resolves every open occurrence of one issue; body carries resolved_by and resolution_note (spec aliases).',
+                    inputs: 'Body: { fingerprint, resolved_by, resolution_note }', curl: buildCurl('PATCH', '/api/admin/error-logs/resolve-fingerprint', {}, body),
+                    expected: '200 + data.resolved=true, occurrences.unresolved=0', actual: rr.status, pass: ok,
+                    latency: rr.latency, sample: truncate(rr.data), errorDetail: rr.error,
+                });
+                // reopen again so the table is left as found
+                await request('PATCH', '/api/admin/error-logs/resolve', { data: { fingerprint: errorLogFingerprint, resolved: false } });
+            }
         } else {
             // No fingerprint on the row: restore its original state by id instead.
             await request('PATCH', `/api/admin/error-logs/${errorLogId}/resolve`, { data: { resolved: Boolean(errorLogWasResolved) } });
@@ -853,7 +881,7 @@ async function runTests() {
         const pass = r.status === 200 && r.data?.success === true
             && typeof d?.totals?.calls === 'number' && typeof d?.totals?.failed === 'number' && typeof d?.totals?.failure_rate_pct === 'number'
             && Array.isArray(d?.per_service) && Array.isArray(d?.top_endpoints) && Array.isArray(d?.top_users)
-            && Array.isArray(d?.daily_trend) && d?.period && Boolean(d?.generated_at_ist?.display);
+            && Array.isArray(d?.daily_trend) && Array.isArray(d?.top_reasons) && d.top_reasons.every(x => 'error_code' in x && 'error_summary' in x && typeof x.n === 'number') && d?.period && Boolean(d?.generated_at_ist?.display);
         addResult({
             name: 'Audit Logs Summary', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs/summary',
             purpose: 'Per-service calls / failed / failure rate / avg + p50 + p95 duration, top 20 APIs, top 20 users, breakdowns, daily trend (default: last 7 days, pings excluded).',
@@ -882,7 +910,7 @@ async function runTests() {
         const first = rows[0];
         const pass = r.status === 200 && Array.isArray(d?.rows) && typeof d?.total === 'number' && d?.page_size === 20
             && d?.filters?.exclude_pings === true
-            && rows.every(x => x.endpoint !== '/api/auth/activity/ping' && !Object.prototype.hasOwnProperty.call(x, 'stack_trace'))
+            && rows.every(x => x.endpoint !== '/api/auth/activity/ping' && !Object.prototype.hasOwnProperty.call(x, 'stack_trace') && ['error_code', 'what_happened', 'error_summary'].every(k => Object.prototype.hasOwnProperty.call(x, k)))
             && (!first || Boolean(first.id && first.created_at_ist?.display && first.status && first.service_name));
         addResult({
             name: 'Audit Logs List', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
@@ -943,6 +971,21 @@ async function runTests() {
         });
     }
     {
+        const params = { error_code: 'auth_expired,not_found', sort: 'duration_ms', page_size: 20 };
+        const r = await request('GET', '/api/admin/audit-logs', { params });
+        const rows = r.data?.data?.rows || [];
+        const f = r.data?.data?.filters;
+        const sortedDesc = rows.every((x, i) => i === 0 || (rows[i - 1].duration_ms ?? -1) >= (x.duration_ms ?? -1));
+        const pass = r.status === 200 && Array.isArray(f?.error_code) && f.error_code.includes('AUTH_EXPIRED') && rows.every(x => ['AUTH_EXPIRED', 'NOT_FOUND'].includes(x.error_code)) && sortedDesc;
+        addResult({
+            name: 'Audit Logs List (error_code filter + sort=duration_ms)', group: 'Audit Logs', method: 'GET', path: '/api/admin/audit-logs',
+            purpose: 'error_code is a csv filter (upper-cased); sort=duration_ms (alias of slowest) orders by duration desc.',
+            inputs: 'Query: error_code, sort', curl: buildCurl('GET', '/api/admin/audit-logs', {}, null, params),
+            expected: '200 + rows only with those codes, slowest first', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
         const params = { status: 'NOPE', from: 'yesterday' };
         const r = await request('GET', '/api/admin/audit-logs', { params });
         addResult({
@@ -993,7 +1036,9 @@ async function runTests() {
             const linkOk = !auditFailedErrorLogId || id !== auditFailedId || (d?.error && d.error.id === auditFailedErrorLogId && Object.prototype.hasOwnProperty.call(d.error, 'stack_trace'));
             const pass = r.status === 200 && d?.audit?.id === id
                 && Object.prototype.hasOwnProperty.call(d.audit, 'stack_trace')
-                && Object.prototype.hasOwnProperty.call(d, 'error') && Array.isArray(d?.errors) && linkOk;
+                && Object.prototype.hasOwnProperty.call(d, 'error') && Array.isArray(d?.errors) && Array.isArray(d?.request_trace) && d.request_trace.some(x => x.id === id)
+                && Array.isArray(d?.same_request) && !d.same_request.some(x => x.id === id) && typeof d?.recurrences?.count === 'number'
+                && ['error_code', 'what_happened', 'suggested_fix', 'error_stack', 'fingerprint'].every(k => Object.prototype.hasOwnProperty.call(d.audit, k)) && linkOk;
             addResult({
                 name: 'Audit Log Detail', group: 'Audit Logs', method: 'GET', path: `/api/admin/audit-logs/${id}`,
                 purpose: 'Full row incl. stack_trace and payload, plus the linked error_logs row(s) (error_log_id / payload.error_log_ids) with their stack traces.',
@@ -1004,6 +1049,213 @@ async function runTests() {
         } else {
             console.log('  ⚠️  No api_audit_logs rows in the last 7 days — skipping detail test');
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // K) Sales Referrals — /api/admin/sales-referrals (read + validation only; no rows are created)
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('\n── K) Sales Referrals ──');
+    const SR = '/api/admin/sales-referrals';
+    {
+        const r = await request('GET', `${SR}/reports/summary`);
+        const d = r.data?.data;
+        const pass = r.status === 200 && r.data?.success === true
+            && typeof d?.totalSignups === 'number' && typeof d?.viaCode === 'number' && typeof d?.direct === 'number'
+            && typeof d?.free?.total === 'number' && typeof d?.paid?.viaCode === 'number' && typeof d?.lapsed?.total === 'number'
+            && typeof d?.paidPercent === 'number' && d?.filters?.type === 'ALL';
+        addResult({
+            name: 'Sales Referrals Summary', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/summary`,
+            purpose: 'A12 — six summary cards (total, via code, direct, free / paid / lapsed) + paidPercent + trackingSince.',
+            inputs: 'Query: from, to (YYYY-MM-DD, IST), type=ALL|INTERNAL|OUTSOURCED', curl: buildCurl('GET', `${SR}/reports/summary`),
+            expected: '200 + data.totalSignups, viaCode, direct, free/paid/lapsed, paidPercent',
+            actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { from: '2026-10-13', to: '2026-10-01' };
+        const r = await request('GET', `${SR}/reports/summary`, { params });
+        addResult({
+            name: 'Sales Referrals Summary (INVALID date range — expect 400)', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/summary`,
+            purpose: 'A12 — `to` before `from` is rejected with VALIDATION_FAILED.',
+            inputs: JSON.stringify(params), curl: buildCurl('GET', `${SR}/reports/summary`, {}, null, params),
+            expected: '400 VALIDATION_FAILED', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_FAILED',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    let srOwnerId = null;
+    let srCodeId = null;
+    {
+        const r = await request('GET', `${SR}/reports/owners`, { params: { sort: 'signups', direction: 'desc' } });
+        const d = r.data?.data;
+        const pass = r.status === 200 && typeof d?.ownerCountAll === 'number' && typeof d?.codeCountAll === 'number'
+            && Array.isArray(d?.owners) && d?.direct && typeof d.direct.signups === 'number'
+            && d.owners.every(o => 'codes' in o && typeof o.paidPercent === 'number');
+        if (pass && d.owners.length) srOwnerId = d.owners[0].id;
+        addResult({
+            name: 'Sales Referrals Owners Table', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/owners`,
+            purpose: 'A13 — one row per owner (signups, free, paid, lapsed, paidPercent, code counts) + Direct row + ownerCountAll.',
+            inputs: 'Query: from, to, type, search, sort=name|signups|free|paid|lapsed|paidPercent, direction', curl: buildCurl('GET', `${SR}/reports/owners`),
+            expected: '200 + data.owners[], data.direct, ownerCountAll', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', `${SR}/reports/owners`, { params: { type: 'INTERNAL' } });
+        const d = r.data?.data;
+        const pass = r.status === 200 && d?.direct === null && Array.isArray(d?.owners) && d.owners.every(o => o.internal === true);
+        addResult({
+            name: 'Sales Referrals Owners Table (type=INTERNAL, direct row omitted)', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/owners`,
+            purpose: 'A13 — type filter removes Direct (direct: null) and keeps only internal owners.',
+            inputs: 'type=INTERNAL', curl: buildCurl('GET', `${SR}/reports/owners`, {}, null, { type: 'INTERNAL' }),
+            expected: '200 + data.direct === null', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', `${SR}/codes`, { params: { limit: 5 } });
+        const d = r.data?.data;
+        const pass = r.status === 200 && Array.isArray(d?.groups) && d.groups.every(g => g.owner?.id && Array.isArray(g.codes));
+        if (pass && d.groups.length && d.groups[0].codes.length) srCodeId = d.groups[0].codes[0].id;
+        addResult({
+            name: 'Sales Referrals Code Picker Search', group: 'Sales Referrals', method: 'GET', path: `${SR}/codes`,
+            purpose: 'A11 — codes grouped by owner for the Set referral code picker (inactive included by default).',
+            inputs: 'Query: search, includeInactive, limit (1–50)', curl: buildCurl('GET', `${SR}/codes`, {}, null, { limit: 5 }),
+            expected: '200 + data.groups[].owner + codes[]', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { ownerName: 'SalesForYou', count: 2, exclude: 'SFY-7K2Q' };
+        const r = await request('GET', `${SR}/codes/suggest`, { params });
+        const d = r.data?.data;
+        const pass = r.status === 200 && Array.isArray(d?.suggestions) && d.suggestions.length === 2 && d.suggestions.every(c => /^SFY-[A-HJ-NP-Z2-9]{4}$/.test(c));
+        addResult({
+            name: 'Sales Referrals Suggest Codes', group: 'Sales Referrals', method: 'GET', path: `${SR}/codes/suggest`,
+            purpose: 'A9 — generates available codes from the owner name (SalesForYou → SFY-XXXX); nothing is reserved.',
+            inputs: JSON.stringify(params), curl: buildCurl('GET', `${SR}/codes/suggest`, {}, null, params),
+            expected: '200 + data.suggestions[2] matching SFY-XXXX', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', `${SR}/codes/suggest`);
+        addResult({
+            name: 'Sales Referrals Suggest Codes (no ownerName/ownerId — expect 400)', group: 'Sales Referrals', method: 'GET', path: `${SR}/codes/suggest`,
+            purpose: 'A9 — exactly one of ownerName / ownerId is required.',
+            inputs: 'none', curl: buildCurl('GET', `${SR}/codes/suggest`),
+            expected: '400 VALIDATION_FAILED', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_FAILED',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { code: 'bad code!' };
+        const r = await request('GET', `${SR}/codes/availability`, { params });
+        const d = r.data?.data;
+        addResult({
+            name: 'Sales Referrals Code Availability (invalid format)', group: 'Sales Referrals', method: 'GET', path: `${SR}/codes/availability`,
+            purpose: 'A10 — always 200; status carries AVAILABLE / TAKEN / INVALID_FORMAT.',
+            inputs: JSON.stringify(params), curl: buildCurl('GET', `${SR}/codes/availability`, {}, null, params),
+            expected: '200 + data.status === INVALID_FORMAT', actual: r.status, pass: r.status === 200 && d?.status === 'INVALID_FORMAT',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { code: 'zz-test-' + Date.now().toString(36).slice(-5) };
+        const r = await request('GET', `${SR}/codes/availability`, { params });
+        const d = r.data?.data;
+        addResult({
+            name: 'Sales Referrals Code Availability (available)', group: 'Sales Referrals', method: 'GET', path: `${SR}/codes/availability`,
+            purpose: 'A10 — code is normalised (trim + upper-case) and reported AVAILABLE when unused.',
+            inputs: JSON.stringify(params), curl: buildCurl('GET', `${SR}/codes/availability`, {}, null, params),
+            expected: '200 + data.status === AVAILABLE + upper-cased code', actual: r.status,
+            pass: r.status === 200 && d?.status === 'AVAILABLE' && d?.code === params.code.toUpperCase(),
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', `${SR}/reports/signups`, { params: { direct: true, page: 0, size: 5 } });
+        const d = r.data?.data;
+        const pass = r.status === 200 && d?.scope?.type === 'DIRECT' && d?.statusCounts && typeof d.statusCounts.all === 'number'
+            && Array.isArray(d?.items) && d?.page === 0 && d?.size === 5 && typeof d?.totalItems === 'number';
+        addResult({
+            name: 'Sales Referrals Signups (direct)', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/signups`,
+            purpose: 'A15 — workspaces with no code; statusCounts computed before the status filter; 0-based paging.',
+            inputs: 'direct=true&page=0&size=5', curl: buildCurl('GET', `${SR}/reports/signups`, {}, null, { direct: true, page: 0, size: 5 }),
+            expected: '200 + data.scope.type === DIRECT, statusCounts, items[]', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', `${SR}/reports/signups`);
+        addResult({
+            name: 'Sales Referrals Signups (no scope — expect 400)', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/signups`,
+            purpose: 'A15 — exactly one of codeId / ownerId / direct=true is required.',
+            inputs: 'none', curl: buildCurl('GET', `${SR}/reports/signups`),
+            expected: '400 VALIDATION_FAILED', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_FAILED',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const id = '00000000-0000-0000-0000-000000000000';
+        const r = await request('GET', `${SR}/owners/${id}`);
+        addResult({
+            name: 'Sales Referrals Owner Detail (UNKNOWN id — expect 404)', group: 'Sales Referrals', method: 'GET', path: `${SR}/owners/${id}`,
+            purpose: 'A3 — unknown owner id → SALES_OWNER_NOT_FOUND.',
+            inputs: 'ownerId = all-zero UUID', curl: buildCurl('GET', `${SR}/owners/${id}`),
+            expected: '404 SALES_OWNER_NOT_FOUND', actual: r.status, pass: r.status === 404 && r.data?.error?.code === 'SALES_OWNER_NOT_FOUND',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    if (srOwnerId) {
+        const r = await request('GET', `${SR}/owners/${srOwnerId}`);
+        const d = r.data?.data;
+        const pass = r.status === 200 && d?.id === srOwnerId && Array.isArray(d?.codes) && typeof d?.codeCounts?.active === 'number';
+        addResult({
+            name: 'Sales Referrals Owner Detail', group: 'Sales Referrals', method: 'GET', path: `${SR}/owners/${srOwnerId}`,
+            purpose: 'A3 — owner profile + every code (active, inactive, refreshed) + codeCounts.',
+            inputs: `ownerId = ${srOwnerId}`, curl: buildCurl('GET', `${SR}/owners/${srOwnerId}`),
+            expected: '200 + data.codes[], codeCounts', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+        const r2 = await request('GET', `${SR}/reports/owners/${srOwnerId}/codes`);
+        const d2 = r2.data?.data;
+        const pass2 = r2.status === 200 && d2?.owner?.id === srOwnerId && Array.isArray(d2?.codes) && typeof d2?.totals?.paidPercent === 'number';
+        addResult({
+            name: 'Sales Referrals Owner Code Breakdown', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/owners/${srOwnerId}/codes`,
+            purpose: 'A14 — per-code signups / free / paid / lapsed / paidPercent + totals for the owner detail page.',
+            inputs: `ownerId = ${srOwnerId}; Query: from, to`, curl: buildCurl('GET', `${SR}/reports/owners/${srOwnerId}/codes`),
+            expected: '200 + data.totals, data.codes[]', actual: r2.status, pass: pass2, latency: r2.latency, sample: truncate(r2.data), errorDetail: r2.error,
+        });
+    } else {
+        console.log('  ⚠️  No sales owners yet — skipping owner detail / breakdown tests');
+    }
+    if (srCodeId) {
+        const r = await request('GET', `${SR}/reports/signups`, { params: { codeId: srCodeId } });
+        const d = r.data?.data;
+        const pass = r.status === 200 && d?.scope?.type === 'CODE' && d?.scope?.code?.id === srCodeId && Array.isArray(d?.items);
+        addResult({
+            name: 'Sales Referrals Signups (by code)', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/signups`,
+            purpose: 'A15 — workspaces that signed up under one code.',
+            inputs: `codeId = ${srCodeId}`, curl: buildCurl('GET', `${SR}/reports/signups`, {}, null, { codeId: srCodeId }),
+            expected: '200 + data.scope.type === CODE', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const body = { name: '', internal: 'maybe', codes: 'x' };
+        const r = await request('POST', `${SR}/owners`, { data: body });
+        addResult({
+            name: 'Sales Referrals Create Owner (INVALID body — expect 400)', group: 'Sales Referrals', method: 'POST', path: `${SR}/owners`,
+            purpose: 'A1 — body validation: name required, internal boolean, codes array. Nothing is created.',
+            inputs: JSON.stringify(body), curl: buildCurl('POST', `${SR}/owners`, {}, body),
+            expected: '400 VALIDATION_FAILED', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_FAILED',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const id = '00000000-0000-0000-0000-000000000000';
+        const body = { codeId: id, reason: 'Automated test — should fail on the unknown workspace' };
+        const r = await request('PUT', `${SR}/tenants/${id}/referral`, { data: body });
+        addResult({
+            name: 'Sales Referrals Set Workspace Referral (UNKNOWN tenant — expect 404)', group: 'Sales Referrals', method: 'PUT', path: `${SR}/tenants/${id}/referral`,
+            purpose: 'A16 — unknown workspace id → TENANT_NOT_FOUND. Nothing is written.',
+            inputs: JSON.stringify(body), curl: buildCurl('PUT', `${SR}/tenants/${id}/referral`, {}, body),
+            expected: '404 TENANT_NOT_FOUND', actual: r.status, pass: r.status === 404 && r.data?.error?.code === 'TENANT_NOT_FOUND',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
     }
 
     // ════════════════════════════════════════════════════════════════════════

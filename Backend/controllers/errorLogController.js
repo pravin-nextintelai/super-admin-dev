@@ -96,6 +96,7 @@ const listSchema = Joi.object({
   status_code: Joi.string().trim().max(200).allow(''),
   status_class: Joi.string().trim().lowercase().valid(...svc.STATUS_CLASSES).allow(''),
   error_type: Joi.string().trim().max(255).allow(''),
+  error_code: Joi.string().trim().max(500).allow(''), // csv, e.g. AUTH_EXPIRED,NOT_FOUND
   provider: Joi.string().trim().max(50).allow(''),
   user: Joi.string().trim().max(255).allow(''),
   user_id: Joi.string().trim().max(64).allow(''),
@@ -106,10 +107,14 @@ const listSchema = Joi.object({
   route: Joi.string().trim().max(500).allow(''),
   method: Joi.string().trim().max(255).allow(''),
   resolved: Joi.string().trim().lowercase().valid('all', 'true', 'false', '1', '0', 'yes', 'no').default('all'),
+  is_resolved: Joi.string().trim().lowercase().valid('all', 'true', 'false', '1', '0', 'yes', 'no').allow(''), // alias of resolved
   has_user: boolish(),
   origin: Joi.string().trim().lowercase().valid('browser', 'server', 'all').allow(''),
   exclude_debug: boolish(),
   search: Joi.string().trim().max(200).allow(''),
+  q: Joi.string().trim().max(200).allow(''), // alias of search
+  external_provider: Joi.string().trim().max(50).allow(''), // alias of provider
+  http_method: Joi.string().trim().max(100).allow(''), // csv of HTTP verbs
   from: dateStr('from'),
   to: dateStr('to'),
   since_hours: Joi.number().integer().min(1).max(24 * 366),
@@ -124,9 +129,11 @@ const usersSchema = Joi.object({
   severity: Joi.string().trim().max(100).allow(''),
   category: Joi.string().trim().max(500).allow(''),
   resolved: Joi.string().trim().lowercase().valid('all', 'true', 'false', '1', '0', 'yes', 'no').default('all'),
+  is_resolved: Joi.string().trim().lowercase().valid('all', 'true', 'false', '1', '0', 'yes', 'no').allow(''),
   origin: Joi.string().trim().lowercase().valid('browser', 'server', 'all').allow(''),
   exclude_debug: boolish(),
   search: Joi.string().trim().max(200).allow(''),
+  q: Joi.string().trim().max(200).allow(''),
   from: dateStr('from'),
   to: dateStr('to'),
   since_hours: Joi.number().integer().min(1).max(24 * 366),
@@ -139,10 +146,12 @@ const issuesSchema = Joi.object({
   severity: Joi.string().trim().max(100).allow(''),
   category: Joi.string().trim().max(500).allow(''),
   resolved: Joi.string().trim().lowercase().valid('all', 'true', 'false', '1', '0', 'yes', 'no').default('all'),
+  is_resolved: Joi.string().trim().lowercase().valid('all', 'true', 'false', '1', '0', 'yes', 'no').allow(''),
   user: Joi.string().trim().max(255).allow(''),
   origin: Joi.string().trim().lowercase().valid('browser', 'server', 'all').allow(''),
   exclude_debug: boolish(),
   search: Joi.string().trim().max(200).allow(''),
+  q: Joi.string().trim().max(200).allow(''),
   from: dateStr('from'),
   to: dateStr('to'),
   since_hours: Joi.number().integer().min(1).max(24 * 366),
@@ -151,6 +160,15 @@ const issuesSchema = Joi.object({
 const resolveOneSchema = Joi.object({
   resolved: Joi.boolean().truthy('1', 'yes', 'true').falsy('0', 'no', 'false').default(true),
   note: Joi.string().trim().max(5000).allow('', null),
+  resolution_note: Joi.string().trim().max(5000).allow('', null), // alias of note
+  resolved_by: Joi.string().trim().max(255).allow('', null), // defaults to the caller's admin email / admin-token
+});
+
+const resolveFingerprintSchema = Joi.object({
+  fingerprint: Joi.string().trim().min(8).max(64).required(),
+  note: Joi.string().trim().max(5000).allow('', null),
+  resolution_note: Joi.string().trim().max(5000).allow('', null),
+  resolved_by: Joi.string().trim().max(255).allow('', null),
 });
 
 const idList = Joi.array().items(Joi.string().trim().pattern(UUID_RE).messages({ 'string.pattern.base': 'each id must be a UUID' })).min(1).max(MAX_BULK_IDS);
@@ -160,6 +178,8 @@ const resolveBulkSchema = Joi.object({
   fingerprint: Joi.string().trim().min(8).max(64),
   resolved: Joi.boolean().truthy('1', 'yes', 'true').falsy('0', 'no', 'false').default(true),
   note: Joi.string().trim().max(5000).allow('', null),
+  resolution_note: Joi.string().trim().max(5000).allow('', null),
+  resolved_by: Joi.string().trim().max(255).allow('', null),
 }).xor('ids', 'fingerprint');
 
 const bulkDeleteSchema = Joi.object({
@@ -196,16 +216,20 @@ function makeControllers(pool, docPool) {
     if (st.error) return { error: [st.error] };
     if (q.from && q.to && q.from > q.to) return { error: ['"from" must be on or before "to"'] };
 
+    // Aliases from the "Logs module" spec: q → search, external_provider → provider, is_resolved → resolved
+    const resolvedRaw = q.resolved && q.resolved !== 'all' ? q.resolved : q.is_resolved || 'all';
     const filters = {
       services: csv(q.service),
       environments: csv(q.environment),
       sources: csv(q.source, { upper: true }),
       categories: csv(q.category, { upper: true }),
       severities: csv(q.severity, { upper: true }),
+      http_methods: csv(q.http_method, { upper: true }),
       status_codes: st.codes,
       status_class: q.status_class || undefined,
       error_type: q.error_type || undefined,
-      provider: q.provider || undefined,
+      error_codes: csv(q.error_code, { upper: true }),
+      provider: q.provider || q.external_provider || undefined,
       user: q.user || undefined,
       user_id: q.user_id || undefined,
       user_email: q.user_email || undefined,
@@ -214,11 +238,11 @@ function makeControllers(pool, docPool) {
       endpoint: q.endpoint || undefined,
       route: q.route || undefined,
       method: q.method || undefined,
-      resolved: parseResolved(q.resolved),
+      resolved: parseResolved(resolvedRaw),
       has_user: typeof q.has_user === 'boolean' ? q.has_user : undefined,
       origin: q.origin && q.origin !== 'all' ? q.origin : undefined,
       exclude_debug: q.exclude_debug === true,
-      search: q.search || undefined,
+      search: q.search || q.q || undefined,
       from: q.from,
       to: q.to,
       since: q.since_hours ? new Date(Date.now() - q.since_hours * 3600 * 1000) : undefined,
@@ -230,9 +254,11 @@ function makeControllers(pool, docPool) {
       source: filters.sources.length ? filters.sources : 'all',
       category: filters.categories.length ? filters.categories : 'all',
       severity: filters.severities.length ? filters.severities : 'all',
+      http_method: filters.http_methods.length ? filters.http_methods : 'all',
       status_code: filters.status_codes.length ? filters.status_codes : 'all',
       status_class: filters.status_class || null,
       error_type: filters.error_type || null,
+      error_code: filters.error_codes.length ? filters.error_codes : 'all',
       provider: filters.provider || null,
       user: filters.user || null,
       user_id: filters.user_id || null,
@@ -344,6 +370,7 @@ function makeControllers(pool, docPool) {
         by_environment: s.by_environment,
         top_endpoints: s.top_endpoints.map((r) => ({ ...r, last_error_at: r.last_error_at ? new Date(r.last_error_at).toISOString() : null, last_error_at_ist: formatIST(r.last_error_at) })),
         top_issues: s.top_issues.map((r) => svc.serializeIssue(r, { now })),
+        top_reasons: s.top_reasons.map((r) => ({ ...r, last_seen: r.last_seen ? new Date(r.last_seen).toISOString() : null, last_seen_ist: formatIST(r.last_seen) })),
         top_users: s.top_users.map((r) => svc.serializeUserGroup(r, { now, user: svc.resolveUserFor(r, userMaps) })),
         recent_unresolved: s.recent_unresolved.map((r) => svc.serializeLog(r, { now, user: svc.resolveUserFor(r, userMaps) })),
       };
@@ -453,9 +480,13 @@ function makeControllers(pool, docPool) {
         { header: 'Action', key: 'action' },
         { header: 'Resource type', key: 'resource_type' },
         { header: 'Resource id', key: 'resource_id' },
+        { header: 'Error code', key: 'error_code' },
+        { header: 'What happened', key: 'what_happened' },
+        { header: 'Reason', key: 'error_summary' },
         { header: 'Error type', key: 'error_type' },
         { header: 'Error message', key: 'error_message' },
         { header: 'User message', key: 'user_message' },
+        { header: 'Suggested fix', key: 'suggested_fix' },
         { header: 'User id', key: 'user_id' },
         { header: 'User email', key: 'user_email' },
         { header: 'User name', get: (e) => e.user?.username || '' },
@@ -565,7 +596,11 @@ function makeControllers(pool, docPool) {
       if (!row) return fail(req, res, 404, 'NOT_FOUND', 'Error log not found');
 
       const now = new Date();
-      const [related, audit] = await Promise.all([svc.getRelated(docPool, row), svc.getAuditForLog(docPool, row, logger)]);
+      const [related, audit, recurrences] = await Promise.all([
+        svc.getRelated(docPool, row),
+        svc.getAuditForLog(docPool, row, logger),
+        svc.getRecurrences(docPool, row.fingerprint, { days: 7 }),
+      ]);
       const maps = await svc.enrichRows(pool, [row, ...related.sameRequest, ...related.sameIssue], logger);
 
       const log = svc.serializeLog(row, { now, full: true, user: svc.resolveUserFor(row, maps) });
@@ -594,6 +629,7 @@ function makeControllers(pool, docPool) {
           log,
           issue,
           audit: svc.serializeAudit(audit),
+          recurrences,
           related: {
             same_request: related.sameRequest.map((r) => svc.serializeLog(r, { now, user: svc.resolveUserFor(r, maps) })),
             same_issue: related.sameIssue.map((r) => svc.serializeLog(r, { now, user: svc.resolveUserFor(r, maps) })),
@@ -617,7 +653,11 @@ function makeControllers(pool, docPool) {
       const existing = await svc.getLogById(docPool, id);
       if (!existing) return fail(req, res, 404, 'NOT_FOUND', 'Error log not found');
 
-      const { ids } = await svc.setResolved(docPool, { ids: [id] }, { resolved: value.resolved, note: value.note || null, actor: actorLabel(req) });
+      const { ids } = await svc.setResolved(
+        docPool,
+        { ids: [id] },
+        { resolved: value.resolved, note: value.note || value.resolution_note || null, actor: value.resolved_by || actorLabel(req) }
+      );
       const row = await svc.getLogById(docPool, id);
       const maps = await svc.enrichRows(pool, [row], logger);
       const log = svc.serializeLog(row, { full: true, user: svc.resolveUserFor(row, maps) });
@@ -639,15 +679,43 @@ function makeControllers(pool, docPool) {
       if (error) return fail(req, res, 400, 'VALIDATION_ERROR', 'Invalid payload', error);
 
       const target = value.ids ? { ids: value.ids.map((s) => s.toLowerCase()) } : { fingerprint: value.fingerprint };
-      const { ids } = await svc.setResolved(docPool, target, { resolved: value.resolved, note: value.note || null, actor: actorLabel(req) });
+      const note = value.note || value.resolution_note || null;
+      const { ids } = await svc.setResolved(docPool, target, { resolved: value.resolved, note, actor: value.resolved_by || actorLabel(req) });
 
       logPortalFlow(req, value.resolved ? 'Error logs bulk resolved' : 'Error logs bulk reopened', {
         layer: LAYER,
-        summary: { requested: value.ids ? value.ids.length : `fingerprint ${value.fingerprint}`, changed: ids.length, note: value.note || null },
+        summary: { requested: value.ids ? value.ids.length : `fingerprint ${value.fingerprint}`, changed: ids.length, note },
       });
       return res.json({ success: true, data: { resolved: value.resolved, changed: ids.length, ids } });
     } catch (err) {
       return serverError(req, res, 'Failed to update error logs', err);
+    }
+  };
+
+  // PATCH /resolve-fingerprint   { fingerprint, resolved_by?, resolution_note? }  → resolves every open occurrence
+  const resolveFingerprint = async (req, res) => {
+    try {
+      const { error, value } = validate(resolveFingerprintSchema, req.body);
+      if (error) return fail(req, res, 400, 'VALIDATION_ERROR', 'Invalid payload', error);
+
+      const note = value.note || value.resolution_note || null;
+      const actor = value.resolved_by || actorLabel(req);
+      const { ids } = await svc.setResolved(docPool, { fingerprint: value.fingerprint }, { resolved: true, note, actor });
+      const remaining = await docPool.query(
+        `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE NOT is_resolved)::int AS unresolved FROM error_logs WHERE fingerprint = $1`,
+        [value.fingerprint]
+      );
+
+      logPortalFlow(req, 'Error logs resolved by fingerprint', {
+        layer: LAYER,
+        summary: { fingerprint: value.fingerprint, changed: ids.length, resolvedBy: actor, note },
+      });
+      return res.json({
+        success: true,
+        data: { fingerprint: value.fingerprint, resolved: true, resolved_by: actor, changed: ids.length, ids, occurrences: remaining.rows[0] },
+      });
+    } catch (err) {
+      return serverError(req, res, 'Failed to resolve error logs by fingerprint', err);
     }
   };
 
@@ -686,7 +754,7 @@ function makeControllers(pool, docPool) {
     }
   };
 
-  return { getStats, getMeta, listLogs, exportCsv, listUsers, listIssues, getLog, resolveOne, resolveBulk, deleteOne, deleteBulk };
+  return { getStats, getMeta, listLogs, exportCsv, listUsers, listIssues, getLog, resolveOne, resolveBulk, resolveFingerprint, deleteOne, deleteBulk };
 }
 
 module.exports = { makeControllers, DELETE_ROLES };

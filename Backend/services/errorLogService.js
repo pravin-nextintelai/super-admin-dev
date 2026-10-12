@@ -116,7 +116,7 @@ const LIST_COLUMNS = `
   e.id, e.created_at, e.service_name, e.environment, e.source, e.category, e.severity,
   e.request_id, e.user_id, e.user_email, e.ip_address,
   e.endpoint, e.http_method, e.method, e.action, e.resource_type, e.resource_id, e.status_code,
-  e.user_message, e.error_type, e.error_message,
+  e.user_message, e.error_type, e.error_message, e.error_summary, e.error_code, e.what_happened, e.suggested_fix,
   (e.stack_trace IS NOT NULL AND e.stack_trace <> '') AS has_stack_trace,
   e.external_provider, e.external_endpoint, e.external_model, e.external_status_code, e.external_error_code,
   (e.external_response IS NOT NULL AND e.external_response <> '') AS has_external_response,
@@ -191,6 +191,10 @@ function serializeLog(row, { now = new Date(), full = false, user = null } = {})
     user_message: row.user_message || null,
     error_type: row.error_type || null,
     error_message: row.error_message || null,
+    error_summary: row.error_summary || null, // WHY, plain language (migration 187)
+    error_code: row.error_code || null, // AUTH_EXPIRED, NOT_FOUND, AI_QUOTA_EXCEEDED, … (migration 188)
+    what_happened: row.what_happened || null, // WHAT, plain language (migration 188)
+    suggested_fix: row.suggested_fix || null, // "User: … Developers: …" (migration 188)
     has_stack_trace: full ? Boolean(row.stack_trace) : Boolean(row.has_stack_trace),
 
     external: row.external_provider || row.external_endpoint || row.external_status_code != null || row.external_error_code
@@ -265,6 +269,7 @@ function serializeUserGroup(row, { now = new Date(), user = null } = {}) {
     last_error_ago: lastAt ? humanizeDuration(now.getTime() - lastAt.getTime()) : null,
     last_error_type: row.last_error_type || null,
     last_error_message: row.last_error_message || null,
+    last_error_summary: row.last_error_summary || null,
     last_endpoint: row.last_endpoint || null,
     last_service: row.last_service || null,
   };
@@ -282,6 +287,9 @@ function serializeIssue(row, { now = new Date() } = {}) {
     severity: row.severity || null,
     error_type: row.error_type || null,
     error_message: row.error_message || null,
+    error_summary: row.error_summary || null,
+    error_code: row.error_code || null,
+    what_happened: row.what_happened || null,
     endpoint: row.endpoint || null,
     http_method: row.http_method || null,
     status_code: row.status_code != null ? Number(row.status_code) : null,
@@ -323,6 +331,8 @@ function buildFilters(f = {}) {
   anyOf('e.source', f.sources);
   anyOf('e.category', f.categories);
   anyOf('e.severity', f.severities);
+  anyOf('e.http_method', f.http_methods);
+  anyOf('e.error_code', f.error_codes);
   anyOf('e.status_code', f.status_codes, 'int[]');
 
   if (f.status_class && STATUS_CLASSES.includes(f.status_class)) {
@@ -359,6 +369,9 @@ function buildFilters(f = {}) {
     const like = p(`%${escapeLike(String(f.search).trim())}%`);
     where.push(`(
       COALESCE(e.error_message, '')     ILIKE ${like}
+      OR COALESCE(e.error_summary, '')  ILIKE ${like}
+      OR COALESCE(e.what_happened, '')  ILIKE ${like}
+      OR COALESCE(e.error_code, '')     ILIKE ${like}
       OR COALESCE(e.user_message, '')   ILIKE ${like}
       OR COALESCE(e.error_type, '')     ILIKE ${like}
       OR COALESCE(e.endpoint, '')       ILIKE ${like}
@@ -441,6 +454,18 @@ async function listLogs(docPool, { filters = {}, sort = 'newest', page = 1, limi
     listValues
   );
   return { rows, total };
+}
+
+/** How often the same problem (fingerprint) recurred in the last N days. */
+async function getRecurrences(docPool, fingerprint, { days = 7 } = {}) {
+  if (!fingerprint) return { fingerprint: null, days, count: 0, unresolved: 0, affected_users: 0 };
+  const { rows } = await docPool.query(
+    `SELECT COUNT(*)::int AS count, COUNT(*) FILTER (WHERE NOT e.is_resolved)::int AS unresolved,
+            COUNT(DISTINCT ${USER_KEY_SQL}) FILTER (WHERE ${HAS_USER_SQL})::int AS affected_users
+     FROM error_logs e WHERE e.fingerprint = $1 AND e.created_at >= NOW() - ($2 || ' days')::interval`,
+    [fingerprint, String(days)]
+  );
+  return { fingerprint, days, ...rows[0] };
 }
 
 async function getLogById(docPool, id) {
@@ -576,6 +601,7 @@ async function listUsers(docPool, { filters = {}, sort = 'most_errors', page = 1
             MAX(e.created_at) AS last_error_at,
             (array_agg(e.error_type    ORDER BY e.created_at DESC))[1] AS last_error_type,
             (array_agg(e.error_message ORDER BY e.created_at DESC))[1] AS last_error_message,
+            (array_agg(e.error_summary ORDER BY e.created_at DESC))[1] AS last_error_summary,
             (array_agg(e.endpoint      ORDER BY e.created_at DESC))[1] AS last_endpoint,
             (array_agg(e.service_name  ORDER BY e.created_at DESC))[1] AS last_service
      FROM error_logs e
@@ -601,6 +627,9 @@ async function listIssues(docPool, { filters = {}, limit = 10 } = {}) {
             (array_agg(e.severity      ORDER BY e.created_at DESC))[1] AS severity,
             (array_agg(e.error_type    ORDER BY e.created_at DESC))[1] AS error_type,
             (array_agg(e.error_message ORDER BY e.created_at DESC))[1] AS error_message,
+            (array_agg(e.error_summary ORDER BY e.created_at DESC) FILTER (WHERE e.error_summary IS NOT NULL))[1] AS error_summary,
+            (array_agg(e.error_code    ORDER BY e.created_at DESC) FILTER (WHERE e.error_code IS NOT NULL))[1] AS error_code,
+            (array_agg(e.what_happened ORDER BY e.created_at DESC) FILTER (WHERE e.what_happened IS NOT NULL))[1] AS what_happened,
             (array_agg(e.endpoint      ORDER BY e.created_at DESC))[1] AS endpoint,
             (array_agg(e.http_method   ORDER BY e.created_at DESC))[1] AS http_method,
             (array_agg(e.status_code   ORDER BY e.created_at DESC))[1] AS status_code,
@@ -622,7 +651,7 @@ async function listIssues(docPool, { filters = {}, limit = 10 } = {}) {
 }
 
 async function getStats(docPool) {
-  const [totalsRes, trendRes, byService, byCategory, bySource, bySeverity, byStatus, byEnv, topEndpoints, issues, users, recent] =
+  const [totalsRes, trendRes, byService, byCategory, bySource, bySeverity, byStatus, byEnv, topEndpoints, issues, users, recent, reasons] =
     await Promise.all([
       docPool.query(`
         WITH ist AS (SELECT (NOW() AT TIME ZONE 'Asia/Kolkata') AS now_local)
@@ -736,9 +765,20 @@ async function getStats(docPool) {
         `SELECT ${LIST_COLUMNS}, ${OCCURRENCE_SQL} FROM error_logs e
          WHERE NOT e.is_resolved ORDER BY e.created_at DESC LIMIT 5`
       ),
+      // Plain-language reasons (error_summary) seen most often among open errors
+      docPool.query(`
+        SELECT e.error_summary AS value, e.error_code, COUNT(*)::int AS total,
+               COUNT(*) FILTER (WHERE NOT e.is_resolved)::int AS unresolved,
+               COUNT(*) FILTER (WHERE e.created_at >= NOW() - INTERVAL '24 hours')::int AS last_24h,
+               COUNT(DISTINCT ${USER_KEY_SQL}) FILTER (WHERE ${HAS_USER_SQL})::int AS affected_users,
+               MAX(e.created_at) AS last_seen
+        FROM error_logs e WHERE e.error_summary IS NOT NULL AND e.error_summary <> ''
+        GROUP BY 1, 2 ORDER BY unresolved DESC, total DESC LIMIT 10
+      `),
     ]);
 
   return {
+    top_reasons: reasons.rows,
     totals: totalsRes.rows[0],
     daily_trend: trendRes.rows,
     by_service: byService.rows,
@@ -937,6 +977,7 @@ module.exports = {
   // reads
   listLogs,
   getLogById,
+  getRecurrences,
   getRelated,
   getAuditForLog,
   listUsers,

@@ -68,9 +68,11 @@ const marketingPromoRoutes = require('./routes/marketingPromoRoutes');
 const publicPromoRoutes = require('./routes/publicPromoRoutes');
 const errorLogRoutes = require('./routes/errorLogRoutes');
 const auditLogRoutes = require('./routes/auditLogRoutes');
+const salesReferralsRoutes = require('./routes/salesReferralsRoutes');
 const { ensureContactEnquirySchema } = require('./services/contactEnquiryService');
 const { ensureNewsletterSubscriberSchema } = require('./services/newsletterSubscriberService');
 const { ensureMarketingPromoSchema } = require('./services/marketingPromoService');
+const { ensureSalesReferralsSchema } = require('./services/salesReferralsService');
 const aiDocumentPool = require('./config/aiDocumentDB');
 const jurinexVoiceRoutes = require('./modules/jurinex-voice');
 const { attachAgentLiveTestSocket } = require('./modules/jurinex-voice/tests/agentLiveTest.socket');
@@ -254,6 +256,11 @@ console.log('📌 /api/admin/error-logs → Platform error logs (Document_DB err
 app.use('/api/admin/error-logs', errorLogRoutes(pool, docPool));
 console.log('📌 /api/admin/audit-logs → Activity & Error Logs (Document_DB api_audit_logs; one row per API call, owned by agentic-document-service)');
 app.use('/api/admin/audit-logs', auditLogRoutes(pool, docPool));
+
+console.log('📌 /api/admin/sales-referrals → Sales owners, referral codes, attribution reports (Auth DB; workspaces = firms)');
+app.use('/api/admin/sales-referrals', salesReferralsRoutes(pool));
+// Spec base path (docs/sales-referrals-admin-api.md) — same router.
+app.use('/api/v1/admin/sales-referrals', salesReferralsRoutes(pool));
 
 console.log('🎙️  /admin/jurinex-voice → Voice agent management + KB (jurinex-voice-docs bucket)');
 app.use('/admin/jurinex-voice', jurinexVoiceRoutes(pool));
@@ -1057,6 +1064,9 @@ const startServer = async () => {
     await ensureMarketingPromoSchema(pool)
       .then(() => console.log('✅ marketing_promos tables ready (Main DB)'))
       .catch((e) => console.error('❌ Error initializing marketing_promos tables:', e.message));
+    await ensureSalesReferralsSchema(pool)
+      .then(() => console.log('✅ sales_referrals tables ready (Main DB)'))
+      .catch((e) => console.error('❌ Error initializing sales_referrals tables:', e.message));
     await recoverStuckDocuments();
 
     const shutdown = async (signal) => {
