@@ -16,9 +16,9 @@
  *   A12 GET    /reports/summary
  *   A13 GET    /reports/owners
  *   A14 GET    /reports/owners/:ownerId/codes
- *   A15 GET    /reports/signups
- *   A16 PUT    /tenants/:tenantId/referral
- *   A17 GET    /tenants/:tenantId/referral, GET /users/:userId/referral   (referral block)
+ *   A15 GET    /reports/signups                 (+ source=, tenantType=FIRM|SOLO; items carry tenantType)
+ *   A16 PUT    /tenants/:tenantId/referral      (:tenantId = firms.id uuid → FIRM, or users.id integer → SOLO)
+ *   A17 GET    /tenants/:tenantId/referral, GET /users/:userId/referral   (referral block + tenantType)
  *
  * Envelope: { success: true, data } / { success: false, error: { code, message, details? }, requestId }.
  */
@@ -65,6 +65,16 @@ function uuidParam(req, res, name) {
     return null;
   }
   return v.toLowerCase();
+}
+
+/** Tenant id of either shape: firms.id (uuid → FIRM) or users.id (integer → SOLO). */
+function tenantIdParam(req, res, name = 'tenantId') {
+  const key = svc.resolveTenantKey(req.params[name]);
+  if (!key) {
+    validationFailed(req, res, [{ field: name, message: `"${name}" must be a workspace UUID or a solo user id` }]);
+    return null;
+  }
+  return String(key.id);
 }
 
 function intParam(req, res, name) {
@@ -176,6 +186,8 @@ const signupsSchema = Joi.object({
   ownerId: Joi.string().trim().pattern(UUID_RE).messages({ 'string.pattern.base': '"ownerId" must be a UUID' }),
   direct: boolish(),
   status: Joi.string().trim().uppercase().valid(...reports.SIGNUP_STATUSES).allow(''),
+  source: Joi.string().trim().uppercase().valid(...reports.SIGNUP_SOURCES).allow(''),
+  tenantType: Joi.string().trim().uppercase().valid(...reports.TENANT_TYPES).allow(''),
   search: Joi.string().trim().max(200).allow(''),
   page: Joi.number().integer().min(0).default(0),
   size: Joi.number().integer().min(1).max(100).default(20),
@@ -396,7 +408,10 @@ function makeControllers(pool) {
       return validationFailed(req, res, [{ field: 'scope', message: 'Pass exactly one of codeId, ownerId or direct=true', given: scopes }]);
     }
     try {
-      return ok(res, await reports.signups(pool, { ...value, status: value.status || undefined, search: value.search || undefined }));
+      return ok(res, await reports.signups(pool, {
+        ...value, status: value.status || undefined, search: value.search || undefined,
+        source: value.source || undefined, tenantType: value.tenantType || undefined,
+      }));
     } catch (err) {
       return handleError(req, res, err, 'Failed to load signups');
     }
@@ -404,7 +419,7 @@ function makeControllers(pool) {
 
   // A16
   const setTenantReferral = async (req, res) => {
-    const tenantId = uuidParam(req, res, 'tenantId');
+    const tenantId = tenantIdParam(req, res, 'tenantId');
     if (!tenantId) return undefined;
     const { error, value } = validate(setReferralSchema, req.body);
     if (error) return validationFailed(req, res, error);
@@ -412,7 +427,7 @@ function makeControllers(pool) {
       const data = await svc.setTenantReferral(pool, tenantId, value, actorId(req));
       logPortalFlow(req, 'Sales referrals: workspace referral set', {
         layer: LAYER,
-        summary: { tenantId, previousCodeId: data.previous ? data.previous.codeId : null, newCodeId: value.codeId, reason: value.reason },
+        summary: { tenantId, tenantType: data.tenantType, previousCodeId: data.previous ? data.previous.codeId : null, newCodeId: value.codeId, reason: value.reason },
       });
       return ok(res, data);
     } catch (err) {
@@ -422,7 +437,7 @@ function makeControllers(pool) {
 
   // A17 (referral block, by workspace)
   const getTenantReferral = async (req, res) => {
-    const tenantId = uuidParam(req, res, 'tenantId');
+    const tenantId = tenantIdParam(req, res, 'tenantId');
     if (!tenantId) return undefined;
     try {
       return ok(res, await svc.getTenantReferral(pool, tenantId));

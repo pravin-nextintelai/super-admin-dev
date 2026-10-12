@@ -33,6 +33,10 @@ import VoiceManagementPage from './features/jurinex-voice/pages/VoiceManagementP
 import RoleManagement from './pages/dashboard/RoleManagement';
 import Settings from './pages/dashboard/Settings';
 import AuditLogs from './pages/dashboard/AuditLogs';
+import SalesReferralsOverviewPage from './features/sales-referrals/pages/SalesReferralsOverviewPage';
+import SalesOwnerDetailPage from './features/sales-referrals/pages/SalesOwnerDetailPage';
+import ReferralSignupsPage from './features/sales-referrals/pages/ReferralSignupsPage';
+import { SALES_REFERRALS_ROUTES } from './features/sales-referrals/salesReferrals.routes';
 import { createDebugLogger } from './utils/debugLogger';
 import './App.css';
 import './index.css';
@@ -145,6 +149,11 @@ function App() {
             <Route path="newsletter-subscribers" element={<RequireRole allow={['marketing-admin']}><NewsletterSubscribers /></RequireRole>} />
             <Route path="offers-events" element={<RequireRole allow={['marketing-admin']}><MarketingPromos /></RequireRole>} />
             <Route path="audit-logs" element={<RequireRole allow={[]}><AuditLogs /></RequireRole>} />
+            {/* Sales Referrals — super-admin only */}
+            <Route path={SALES_REFERRALS_ROUTES.overview} element={<RequireRole allow={[]}><SalesReferralsOverviewPage /></RequireRole>} />
+            <Route path={SALES_REFERRALS_ROUTES.owner} element={<RequireRole allow={[]}><SalesOwnerDetailPage /></RequireRole>} />
+            <Route path={SALES_REFERRALS_ROUTES.codeSignups} element={<RequireRole allow={[]}><ReferralSignupsPage /></RequireRole>} />
+            <Route path={SALES_REFERRALS_ROUTES.ownerSignups} element={<RequireRole allow={[]}><ReferralSignupsPage /></RequireRole>} />
             <Route path="judgements" element={<RequireRole allow={[]}><JudgementManagement /></RequireRole>} />
             <Route path="judgement-search" element={<RequireRole allow={[]}><JudgementSearch /></RequireRole>} />
             <Route path="citation-management" element={<RequireRole allow={[]}><CitationManagement /></RequireRole>} />

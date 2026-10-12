@@ -30,6 +30,20 @@ const API_BASE_URL =
     ? normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL)
     : DEFAULT_API_BASE;
 
+/**
+ * Customer-facing JuriNex app where referral signup links point. Both the live site and the local
+ * dev app are offered when sharing a code. Override with VITE_CUSTOMER_APP_URL (live) and
+ * VITE_CUSTOMER_APP_LOCAL_URL (local).
+ */
+const envOr = (key, fallback) =>
+  normalizeOriginUrl(typeof import.meta !== 'undefined' && import.meta.env?.[key] ? import.meta.env[key] : '', fallback);
+export const CUSTOMER_APP_URLS = Object.freeze({
+  live: envOr('VITE_CUSTOMER_APP_URL', 'https://ailearn.co.in'),
+  local: envOr('VITE_CUSTOMER_APP_LOCAL_URL', 'http://localhost:5173'),
+});
+/** Default (live) customer app URL. */
+export const CUSTOMER_APP_URL = CUSTOMER_APP_URLS.live;
+
 /** Backend origin without `/api` (document gateway, etc.) */
 export const BACKEND_ORIGIN = String(API_BASE_URL).replace(/\/api\/?$/, '');
 

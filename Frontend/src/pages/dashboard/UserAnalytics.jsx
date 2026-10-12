@@ -12,6 +12,7 @@ import {
   KpiCard, ChartCard, EmptyState, Donut, StorageBar, SectionErrorBanner, StatusPill,
 } from './userAnalytics/AnalyticsCharts';
 import { fetchUserAnalytics, fetchUserStorage, fetchUserTokenSeries, fetchUserAiUsage, fetchFirmAnalytics } from './userAnalytics/analyticsApi';
+import WorkspaceReferralCard from '../../features/sales-referrals/components/WorkspaceReferralCard';
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: BarChart3 },
@@ -498,6 +499,15 @@ const UserAnalytics = ({ mode: modeProp }) => {
           <RefreshCw className={`w-4 h-4 ${mainLoading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
+
+      {/* Referral attribution (super-admin): which sales referral code this workspace is counted under */}
+      {localStorage.getItem('userRole') === 'super-admin' && (
+        <WorkspaceReferralCard
+          kind={mode === 'firm' ? 'tenant' : 'user'}
+          id={id}
+          memberCount={mode === 'firm' ? main?.firm?.member_count : undefined}
+        />
+      )}
 
       {mainErr ? (
         <div className="flex flex-col items-center gap-3 py-20 text-slate-400">
