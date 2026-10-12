@@ -148,6 +148,7 @@ export const SALES_REFERRALS_TEXT = Object.freeze({
       open: 'Code actions',
       copyCode: 'Copy code',
       copyLink: 'Copy live link',
+      copyLinkOnly: 'Copy link',
       copyLocalLink: 'Copy local link',
       viewSignups: 'View signups',
       editLabel: 'Edit label',

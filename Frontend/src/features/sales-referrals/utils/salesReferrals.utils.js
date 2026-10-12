@@ -79,22 +79,25 @@ const signupPath = (code) => `${SIGNUP_PATH}?ref=${encodeURIComponent(normalizeC
 /**
  * Customer signup links for a code:
  *   live  → `https://ailearn.co.in/register?ref=PRAV-7DQJ`
- *   local → `http://localhost:5173/register?ref=PRAV-7DQJ`
+ *   local → `http://localhost:5173/register?ref=PRAV-7DQJ`, only while the admin panel runs on
+ *           localhost; `null` in production so a single link is shown.
  */
 export const referralLinks = (code) => ({
   live: `${CUSTOMER_APP_URLS.live}${signupPath(code)}`,
-  local: `${CUSTOMER_APP_URLS.local}${signupPath(code)}`,
+  local: CUSTOMER_APP_URLS.local ? `${CUSTOMER_APP_URLS.local}${signupPath(code)}` : null,
 });
 /** Live signup link (the one to share with customers). */
 export const referralLink = (code) => referralLinks(code).live;
 
-/** Multi-line message for "Copy all links": both links per code. */
+/** Multi-line message for "Copy all links": one line per code, or both links per code in local dev. */
 export const allLinksMessage = (ownerName, codes) =>
   [
     SALES_REFERRALS_TEXT.share.allLinksHeader(ownerName),
     ...codes.flatMap((c) => {
       const l = referralLinks(c.code);
-      return [`${c.code}${c.label ? ` (${c.label})` : ''}`, `  ${SALES_REFERRALS_TEXT.share.live}: ${l.live}`, `  ${SALES_REFERRALS_TEXT.share.local}: ${l.local}`];
+      const name = `${c.code}${c.label ? ` (${c.label})` : ''}`;
+      if (!l.local) return [`${name}: ${l.live}`];
+      return [name, `  ${SALES_REFERRALS_TEXT.share.live}: ${l.live}`, `  ${SALES_REFERRALS_TEXT.share.local}: ${l.local}`];
     }),
   ].join('\n');
 
