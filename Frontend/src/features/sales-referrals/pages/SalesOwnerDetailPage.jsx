@@ -61,8 +61,8 @@ const SalesOwnerDetailPage = () => {
     const items = [];
     if (c.active) {
       items.push({ id: 'copy-code', label: T.menu.copyCode, icon: Copy, onSelect: () => copyText(c.code, S.copiedCode) });
-      items.push({ id: 'copy-link', label: T.menu.copyLink, icon: Link2, onSelect: () => copyText(links.live, S.copiedLink) });
-      items.push({ id: 'copy-local-link', label: T.menu.copyLocalLink, icon: Link2, onSelect: () => copyText(links.local, S.copiedLink) });
+      items.push({ id: 'copy-link', label: links.local ? T.menu.copyLink : T.menu.copyLinkOnly, icon: Link2, onSelect: () => copyText(links.live, S.copiedLink) });
+      if (links.local) items.push({ id: 'copy-local-link', label: T.menu.copyLocalLink, icon: Link2, onSelect: () => copyText(links.local, S.copiedLink) });
     }
     items.push({ id: 'signups', label: T.menu.viewSignups, icon: Eye, onSelect: () => navigate(salesReferralsPath.codeSignups(ownerId, c.id, rangeSearch)) });
     items.push({ id: 'label', label: T.menu.editLabel, icon: Tag, onSelect: () => setDialog({ type: 'label', code: c }) });

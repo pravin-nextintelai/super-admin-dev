@@ -21,7 +21,10 @@ const LinkLine = ({ label, icon, link, buttonLabel, code }) => {
   );
 };
 
-/** One block per code: code pill + label, then the live and local links, each with a copy button. */
+/**
+ * One block per code: code pill + label and the signup link with a copy button. While the admin
+ * panel runs on localhost a second, local-app link is shown as well; in production only the live one.
+ */
 const ShareCodesPanel = ({ codes }) => (
   <ul className="space-y-2">
     {codes.map((c) => {
@@ -35,8 +38,14 @@ const ShareCodesPanel = ({ codes }) => (
             </div>
             <Button size="sm" icon={Copy} onClick={() => copyText(c.code, T.copiedCode)} aria-label={`${C.copyCode} ${c.code}`}>{T.copyCode}</Button>
           </div>
-          <LinkLine label={T.live} icon={Globe} link={links.live} buttonLabel={T.copyLiveLink} code={c.code} />
-          <LinkLine label={T.local} icon={MonitorSmartphone} link={links.local} buttonLabel={T.copyLocalLink} code={c.code} />
+          {links.local ? (
+            <>
+              <LinkLine label={T.live} icon={Globe} link={links.live} buttonLabel={T.copyLiveLink} code={c.code} />
+              <LinkLine label={T.local} icon={MonitorSmartphone} link={links.local} buttonLabel={T.copyLocalLink} code={c.code} />
+            </>
+          ) : (
+            <LinkLine label={T.copyLink} icon={Globe} link={links.live} buttonLabel={T.copyLink} code={c.code} />
+          )}
         </li>
       );
     })}
