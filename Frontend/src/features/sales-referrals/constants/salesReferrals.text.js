@@ -1,7 +1,7 @@
 // All user-facing text for the Sales Referrals module. Keep strings here, not in components.
 
 export const SALES_REFERRALS_TEXT = Object.freeze({
-  nav: { item: 'Sales Referrals', badge: 'NEW' },
+  nav: { item: 'Sales Referrals' },
 
   overview: {
     title: 'Sales Referrals',
