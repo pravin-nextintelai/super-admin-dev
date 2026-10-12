@@ -87,7 +87,6 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
       path: SALES_REFERRALS_BASE,
       icon: Ticket,
       roles: ['super-admin'],
-      badge: SALES_REFERRALS_TEXT.nav.badge,
       matchPrefix: true,
     },
     {
