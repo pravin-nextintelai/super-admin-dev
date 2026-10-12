@@ -1053,6 +1053,7 @@ async function runTests() {
 
     // ════════════════════════════════════════════════════════════════════════
     // K) Sales Referrals — /api/admin/sales-referrals (read + validation only; no rows are created)
+    //    Reports read FIRM (tenant_referrals) + SOLO (user_referrals) sign-ups. Fixture-based union tests: npm run test:referral-reports
     // ════════════════════════════════════════════════════════════════════════
     console.log('\n── K) Sales Referrals ──');
     const SR = '/api/admin/sales-referrals';
@@ -1179,6 +1180,71 @@ async function runTests() {
             inputs: 'direct=true&page=0&size=5', curl: buildCurl('GET', `${SR}/reports/signups`, {}, null, { direct: true, page: 0, size: 5 }),
             expected: '200 + data.scope.type === DIRECT, statusCounts, items[]', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
         });
+    }
+    {
+        const r = await request('GET', `${SR}/reports/summary`);
+        const d = r.data?.data;
+        const pass = r.status === 200 && typeof d?.byTenantType?.FIRM === 'number' && typeof d?.byTenantType?.SOLO === 'number'
+            && d.byTenantType.FIRM + d.byTenantType.SOLO === d.totalSignups;
+        addResult({
+            name: 'Sales Referrals Summary (byTenantType = FIRM + SOLO)', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/summary`,
+            purpose: 'A12 — reports read tenant_referrals (FIRM) and user_referrals (SOLO); byTenantType sums to totalSignups.',
+            inputs: 'none', curl: buildCurl('GET', `${SR}/reports/summary`),
+            expected: '200 + data.byTenantType { FIRM, SOLO } summing to totalSignups', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { direct: true, tenantType: 'SOLO', page: 0, size: 5 };
+        const r = await request('GET', `${SR}/reports/signups`, { params });
+        const d = r.data?.data;
+        const pass = r.status === 200 && Array.isArray(d?.items) && d.items.every(i => i.tenantType === 'SOLO' && typeof i.tenantId === 'string')
+            && d?.filters?.tenantType === 'SOLO';
+        addResult({
+            name: 'Sales Referrals Signups (tenantType=SOLO filter)', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/signups`,
+            purpose: 'A15 — items carry tenantType; tenantType=SOLO returns only solo-lawyer rows (user_referrals).',
+            inputs: JSON.stringify(params), curl: buildCurl('GET', `${SR}/reports/signups`, {}, null, params),
+            expected: '200 + every item.tenantType === SOLO', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { direct: true, tenantType: 'BOGUS' };
+        const r = await request('GET', `${SR}/reports/signups`, { params });
+        addResult({
+            name: 'Sales Referrals Signups (tenantType invalid — expect 400)', group: 'Sales Referrals', method: 'GET', path: `${SR}/reports/signups`,
+            purpose: 'A15 — tenantType must be FIRM or SOLO.',
+            inputs: JSON.stringify(params), curl: buildCurl('GET', `${SR}/reports/signups`, {}, null, params),
+            expected: '400 VALIDATION_FAILED', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_FAILED',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', `${SR}/tenants/2147483000/referral`);
+        addResult({
+            name: 'Sales Referrals Tenant Referral (UNKNOWN solo user id — expect 404)', group: 'Sales Referrals', method: 'GET', path: `${SR}/tenants/2147483000/referral`,
+            purpose: 'A17 — an integer id is looked up in users / user_referrals; unknown → TENANT_NOT_FOUND.',
+            inputs: 'tenantId = 2147483000', curl: buildCurl('GET', `${SR}/tenants/2147483000/referral`),
+            expected: '404 TENANT_NOT_FOUND', actual: r.status, pass: r.status === 404 && r.data?.error?.code === 'TENANT_NOT_FOUND',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        // Resolve a real solo sign-up through /tenants/{integer}/referral when the database has one.
+        const list = await request('GET', `${SR}/reports/signups`, { params: { direct: true, tenantType: 'SOLO', size: 1 } });
+        const viaCode = srOwnerId ? await request('GET', `${SR}/reports/signups`, { params: { ownerId: srOwnerId, tenantType: 'SOLO', size: 1 } }) : null;
+        const soloTenantId = list.data?.data?.items?.[0]?.tenantId || viaCode?.data?.data?.items?.[0]?.tenantId || null;
+        if (soloTenantId) {
+            const r = await request('GET', `${SR}/tenants/${soloTenantId}/referral`);
+            const d = r.data?.data;
+            const pass = r.status === 200 && d?.tenantType === 'SOLO' && d?.tenantId === soloTenantId && d?.referral?.tracked === true;
+            addResult({
+                name: 'Sales Referrals Tenant Referral (solo user id resolves)', group: 'Sales Referrals', method: 'GET', path: `${SR}/tenants/${soloTenantId}/referral`,
+                purpose: 'A17 — /tenants/{id} accepts a users.id for solo lawyers and reads user_referrals.',
+                inputs: `tenantId = ${soloTenantId}`, curl: buildCurl('GET', `${SR}/tenants/${soloTenantId}/referral`),
+                expected: '200 + data.tenantType === SOLO, referral.tracked', actual: r.status, pass, latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+            });
+        } else {
+            console.log('  ⏭  no solo sign-up in the database — skipping /tenants/{integer}/referral resolve test');
+        }
     }
     {
         const r = await request('GET', `${SR}/reports/signups`);

@@ -30,8 +30,11 @@ import {
   Megaphone,
   Contact,
   Activity,
+  Ticket,
 } from 'lucide-react';
 import { createDebugLogger } from '../../utils/debugLogger';
+import { SALES_REFERRALS_TEXT } from '../../features/sales-referrals/constants/salesReferrals.text';
+import { SALES_REFERRALS_BASE } from '../../features/sales-referrals/salesReferrals.routes';
 
 const sidebarLogger = createDebugLogger('Sidebar');
 
@@ -62,8 +65,8 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
     setOpenMenu(openMenu === menuName ? null : menuName);
   };
 
-  const isActive = (path) => {
-    return location.pathname === path;
+  const isActive = (path, matchPrefix = false) => {
+    return matchPrefix ? location.pathname === path || location.pathname.startsWith(`${path}/`) : location.pathname === path;
   };
 
   const allMenuItems = [
@@ -78,6 +81,14 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
       path: '/dashboard/users',
       icon: Users,
       roles: ['super-admin', 'user-admin']
+    },
+    {
+      name: SALES_REFERRALS_TEXT.nav.item,
+      path: SALES_REFERRALS_BASE,
+      icon: Ticket,
+      roles: ['super-admin'],
+      badge: SALES_REFERRALS_TEXT.nav.badge,
+      matchPrefix: true,
     },
     {
       name: 'Admin Management',
@@ -302,7 +313,7 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
         {/* Navigation */}
         <nav className="flex-grow py-4 overflow-y-auto custom-scrollbar px-3">
           {menuItems.map((item, index) => {
-            const active = item.path ? isActive(item.path) : false;
+            const active = item.path ? isActive(item.path, item.matchPrefix) : false;
             return (
               <div key={index} className="mb-1">
                 {item.path ? (
@@ -323,6 +334,11 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
                     {isOpen && (
                       <span className="font-medium whitespace-nowrap overflow-hidden flex-1">
                         {item.name}
+                      </span>
+                    )}
+                    {item.badge && isOpen && (
+                      <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${active ? 'bg-white/20 text-white' : 'bg-emerald-500/20 text-emerald-300'}`}>
+                        {item.badge}
                       </span>
                     )}
                     {active && isOpen && (

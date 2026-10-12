@@ -12,7 +12,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL || process.en
     const { rows } = await pool.query(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public'
-         AND table_name IN ('sales_owners','referral_codes','tenant_referrals','tenant_referral_history')
+         AND table_name IN ('sales_owners','referral_codes','tenant_referrals','tenant_referral_history','user_referral_history','user_referrals')
        ORDER BY table_name`
     );
     console.log('✅ sales_referrals migration completed:', rows.map((r) => r.table_name).join(', '));

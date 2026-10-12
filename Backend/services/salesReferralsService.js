@@ -2,10 +2,12 @@
  * Sales Referrals — owners, referral codes and workspace attribution (Auth / Main DB).
  *
  * Tables (see migrations/create_sales_referrals_tables.sql):
- *   sales_owners, referral_codes, tenant_referrals, tenant_referral_history
+ *   sales_owners, referral_codes, tenant_referrals, tenant_referral_history, user_referral_history
+ *   (user_referrals is owned by the user-side auth service; read and upserted here, never altered)
  *
- * Workspaces in this database are the `firms` table (there is no `tenants` table), so every
- * "tenantId" in this module is a firms.id. Admin ids (super_admins.id) are integers.
+ * Workspaces in this database are the `firms` table (there is no `tenants` table). A "tenantId"
+ * is either a firms.id (uuid → FIRM, tenant_referrals) or a users.id (integer → SOLO lawyer,
+ * user_referrals); `resolveTenantKey` dispatches on the shape. Admin ids (super_admins.id) are integers.
  *
  * All timestamps are returned as ISO-8601 strings with the IST offset (2026-10-09T16:12:00+05:30).
  */
@@ -480,20 +482,43 @@ async function searchCodes(pool, { search, includeInactive = true, limit = 20 })
 
 // ── A16 / A17 — workspace referral ──────────────────────────────────────────
 
-const REFERRAL_SELECT = `
-  SELECT tr.tenant_id, tr.code_id, tr.source, tr.signed_up_at, tr.set_by, tr.set_at, tr.reason,
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolves a tenant id of either shape to its attribution table.
+ * @returns {{ tenantType: 'FIRM', id: string } | { tenantType: 'SOLO', id: number } | null}
+ */
+function resolveTenantKey(raw) {
+  const v = String(raw ?? '').trim();
+  if (UUID_RE.test(v)) return { tenantType: 'FIRM', id: v.toLowerCase() };
+  if (/^\d+$/.test(v) && Number(v) > 0 && Number.isSafeInteger(Number(v))) return { tenantType: 'SOLO', id: Number(v) };
+  return null;
+}
+
+const REFERRAL_TABLES = {
+  FIRM: { table: 'tenant_referrals', key: 'tenant_id', history: 'tenant_referral_history', historyKey: 'tenant_id' },
+  SOLO: { table: 'user_referrals', key: 'user_id', history: 'user_referral_history', historyKey: 'user_id' },
+};
+
+const referralSelect = (tenantType) => {
+  const t = REFERRAL_TABLES[tenantType];
+  return `
+  SELECT tr.${t.key}::text AS tenant_id, tr.code_id, tr.source, tr.signed_up_at, tr.set_by, tr.set_at, tr.reason,
          rc.code, rc.label AS code_label, rc.active AS code_active,
          so.id AS owner_id, so.name AS owner_name, so.internal AS owner_internal
-  FROM tenant_referrals tr
+  FROM ${t.table} tr
   LEFT JOIN referral_codes rc ON rc.id = tr.code_id
-  LEFT JOIN sales_owners so ON so.id = rc.owner_id`;
+  LEFT JOIN sales_owners so ON so.id = rc.owner_id
+  WHERE tr.${t.key} = $1`;
+};
 
-async function buildReferralBlock(db, tenantId) {
-  const { rows } = await db.query(`${REFERRAL_SELECT} WHERE tr.tenant_id = $1`, [tenantId]);
+const UNTRACKED_BLOCK = () => ({ referredBy: 'DIRECT', tracked: false, code: null, owner: null, source: null, signedUpAt: null, setBy: null, setAt: null, reason: null });
+
+/** Referral block for a FIRM (firms.id) or SOLO (users.id) tenant. */
+async function buildReferralBlock(db, key) {
+  const { rows } = await db.query(referralSelect(key.tenantType), [key.id]);
   const r = rows[0];
-  if (!r) {
-    return { referredBy: 'DIRECT', tracked: false, code: null, owner: null, source: null, signedUpAt: null, setBy: null, setAt: null, reason: null };
-  }
+  if (!r) return UNTRACKED_BLOCK();
   const names = await adminNames(db, [r.set_by]);
   const admin = r.source === 'ADMIN';
   return {
@@ -509,18 +534,25 @@ async function buildReferralBlock(db, tenantId) {
   };
 }
 
-async function loadTenant(db, tenantId) {
-  const { rows } = await db.query('SELECT id, firm_name, admin_user_id, created_at FROM firms WHERE id = $1', [tenantId]);
+/** The workspace behind a tenant key: a firm, or a solo user (shown with the user's name). */
+async function loadTenant(db, key) {
+  if (key.tenantType === 'FIRM') {
+    const { rows } = await db.query('SELECT id::text AS id, firm_name AS name, admin_user_id, created_at FROM firms WHERE id = $1', [key.id]);
+    return rows[0] || null;
+  }
+  const { rows } = await db.query('SELECT id::text AS id, username AS name, id AS admin_user_id, created_at FROM users WHERE id = $1', [key.id]);
   return rows[0] || null;
 }
 
 async function getTenantReferral(pool, tenantId) {
-  const tenant = await loadTenant(pool, tenantId);
+  const key = resolveTenantKey(tenantId);
+  if (!key) throw notFoundTenant();
+  const tenant = await loadTenant(pool, key);
   if (!tenant) throw notFoundTenant();
-  return { tenantId: tenant.id, firmName: tenant.firm_name, referral: await buildReferralBlock(pool, tenantId) };
+  return { tenantId: tenant.id, tenantType: key.tenantType, firmName: tenant.name, referral: await buildReferralBlock(pool, key) };
 }
 
-/** A17 helper — referral block for a user: the user's workspace is resolved through firms / firm_users. */
+/** By user: the user's firm when they belong to one, otherwise their SOLO attribution. */
 async function getUserReferral(pool, userId) {
   const { rows } = await pool.query(
     `SELECT f.id, f.firm_name
@@ -533,50 +565,60 @@ async function getUserReferral(pool, userId) {
      LIMIT 1`,
     [userId]
   );
-  const tenant = rows[0];
-  if (!tenant) {
-    return { userId, tenantId: null, firmName: null, referral: { referredBy: 'DIRECT', tracked: false, code: null, owner: null, source: null, signedUpAt: null, setBy: null, setAt: null, reason: null } };
+  const firm = rows[0];
+  if (firm) {
+    const key = { tenantType: 'FIRM', id: firm.id };
+    return { userId, tenantId: firm.id, tenantType: 'FIRM', firmName: firm.firm_name, referral: await buildReferralBlock(pool, key) };
   }
-  return { userId, tenantId: tenant.id, firmName: tenant.firm_name, referral: await buildReferralBlock(pool, tenant.id) };
+  const key = { tenantType: 'SOLO', id: userId };
+  const user = await loadTenant(pool, key);
+  if (!user) {
+    return { userId, tenantId: null, tenantType: null, firmName: null, referral: UNTRACKED_BLOCK() };
+  }
+  return { userId, tenantId: user.id, tenantType: 'SOLO', firmName: user.name, referral: await buildReferralBlock(pool, key) };
 }
 
-/** A16 — set / change a workspace's referral code (one transaction, history kept). */
+/** A16 — upsert the attribution row of the matching table and record the change in its history table. */
 async function setTenantReferral(pool, tenantId, input, actorId) {
   const reason = String(input.reason ?? '').trim();
   if (reason.length < 5) throw new ApiError(400, 'REASON_REQUIRED', 'Please give a reason.', { field: 'reason', min: 5 });
+  const key = resolveTenantKey(tenantId);
+  if (!key) throw notFoundTenant();
+  const t = REFERRAL_TABLES[key.tenantType];
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const tenant = await loadTenant(client, tenantId);
+    const tenant = await loadTenant(client, key);
     if (!tenant) throw notFoundTenant();
     const code = await loadCode(client, input.codeId);
     if (!code) throw notFoundCode();
 
-    const prev = await client.query('SELECT code_id, source FROM tenant_referrals WHERE tenant_id = $1 FOR UPDATE', [tenantId]);
+    const prev = await client.query(`SELECT code_id, source FROM ${t.table} WHERE ${t.key} = $1 FOR UPDATE`, [key.id]);
     const previous = prev.rows[0] || null;
 
     await client.query(
-      `INSERT INTO tenant_referrals (tenant_id, code_id, source, signed_up_at, set_by, set_at, reason)
+      `INSERT INTO ${t.table} (${t.key}, code_id, source, signed_up_at, set_by, set_at, reason)
        VALUES ($1, $2, 'ADMIN', COALESCE($3::timestamptz, NOW()), $4, NOW(), $5)
-       ON CONFLICT (tenant_id) DO UPDATE
+       ON CONFLICT (${t.key}) DO UPDATE
          SET code_id = EXCLUDED.code_id,
              source  = 'ADMIN',
              set_by  = EXCLUDED.set_by,
              set_at  = NOW(),
              reason  = EXCLUDED.reason`,
-      [tenantId, code.id, tenant.created_at, actorId, reason]
+      [key.id, code.id, tenant.created_at, actorId, reason]
     );
     await client.query(
-      `INSERT INTO tenant_referral_history (tenant_id, previous_code_id, new_code_id, previous_source, reason, changed_by)
+      `INSERT INTO ${t.history} (${t.historyKey}, previous_code_id, new_code_id, previous_source, reason, changed_by)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [tenantId, previous ? previous.code_id : null, code.id, previous ? previous.source : null, reason, actorId]
+      [key.id, previous ? previous.code_id : null, code.id, previous ? previous.source : null, reason, actorId]
     );
-    const block = await buildReferralBlock(client, tenantId);
+    const block = await buildReferralBlock(client, key);
     await client.query('COMMIT');
     return {
-      tenantId,
-      firmName: tenant.firm_name,
+      tenantId: tenant.id,
+      tenantType: key.tenantType,
+      firmName: tenant.name,
       previous: previous ? { codeId: previous.code_id, source: previous.source } : null,
       referral: block,
     };
@@ -612,6 +654,7 @@ module.exports = {
   suggestCodes,
   checkAvailability,
   searchCodes,
+  resolveTenantKey,
   getTenantReferral,
   getUserReferral,
   setTenantReferral,

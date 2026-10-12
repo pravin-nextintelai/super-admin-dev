@@ -1,11 +1,14 @@
 /**
  * Sales Referrals — report queries (A12–A15). Auth / Main DB.
  *
- * Every report shares one base population (workspaces that have a tenant_referrals row) and one
- * plan-status expression, so numbers reconcile across screens.
+ * Every report shares one base population and one plan-status expression, so numbers reconcile
+ * across screens. The population is the UNION of the two attribution tables written by the
+ * user-side auth service:
+ *   tenant_referrals — FIRM sign-ups (tenant_id uuid → firms.id)
+ *   user_referrals   — SOLO lawyer sign-ups (user_id integer → users.id; solo users have no firm)
  *
- * Workspace = `firms` row. Plan status is classified from the workspace's admin user
- * (firms.admin_user_id → users.active_plan_name), because this database keeps the plan on the user:
+ * Plan status is classified from the "plan user": the firm's admin user for FIRM rows, the user
+ * itself for SOLO rows (users.active_plan_name), because this database keeps the plan on the user:
  *   PAID   : users.active_plan_name is set and is not a free plan name (REFERRALS_FREE_PLAN_NAMES)
  *   LAPSED : not PAID, but the admin user has at least one user_subscriptions row (was paid before)
  *   FREE   : everything else (including unverified workspaces)
@@ -40,26 +43,57 @@ function num(v) {
   return Number(v || 0);
 }
 
+const TENANT_TYPES = ['FIRM', 'SOLO'];
+const SIGNUP_SOURCES = ['SIGNUP', 'ADMIN'];
+
 /**
- * Base CTE: one row per tracked workspace, with the plan status and the date filter applied.
+ * Base CTEs. `signups_raw` is the union of both attribution tables (one row per tracked FIRM or
+ * SOLO sign-up); the date filter is applied inside each branch, before the UNION. `signups` adds
+ * the plan user (firm admin / the solo user), the plan status and verification.
+ *   tenant_type  'FIRM' | 'SOLO'
+ *   tenant_id    text: firms.id (uuid) for FIRM, users.id for SOLO
+ *   firm_id      uuid for FIRM rows, NULL for SOLO (used for seat counts)
+ *   tenant_name  firm name / solo user's username
  * Params: $1 free plan names (text[]), $2 from (timestamptz|null), $3 to-exclusive (timestamptz|null).
  */
 const SIGNUPS_CTE = `
-  signups AS (
-    SELECT tr.tenant_id, tr.code_id, tr.source, tr.signed_up_at,
-           f.firm_name, f.admin_user_id, f.created_at AS firm_created_at,
-           u.id AS owner_user_id, u.email AS owner_email,
-           (u.approval_status = 'APPROVED') AS email_verified,
-           CASE
-             WHEN u.active_plan_name IS NOT NULL AND lower(u.active_plan_name) <> ALL($1::text[]) THEN 'PAID'
-             WHEN EXISTS (SELECT 1 FROM user_subscriptions us WHERE us.user_id = u.id) THEN 'LAPSED'
-             ELSE 'FREE'
-           END AS plan_status
+  signups_raw AS (
+    SELECT 'FIRM'::text        AS tenant_type,
+           tr.tenant_id::text  AS tenant_id,
+           f.id                AS firm_id,
+           f.firm_name         AS tenant_name,
+           f.email             AS tenant_email,
+           f.admin_user_id     AS plan_user_id,
+           tr.code_id, tr.source, tr.signed_up_at, tr.set_by, tr.set_at, tr.reason
     FROM tenant_referrals tr
     JOIN firms f ON f.id = tr.tenant_id
-    LEFT JOIN users u ON u.id = f.admin_user_id
     WHERE ($2::timestamptz IS NULL OR tr.signed_up_at >= $2::timestamptz)
       AND ($3::timestamptz IS NULL OR tr.signed_up_at <  $3::timestamptz)
+    UNION ALL
+    SELECT 'SOLO'::text,
+           ur.user_id::text,
+           NULL::uuid,
+           u.username,
+           u.email,
+           ur.user_id,
+           ur.code_id, ur.source, ur.signed_up_at, ur.set_by, ur.set_at, ur.reason
+    FROM user_referrals ur
+    JOIN users u ON u.id = ur.user_id
+    WHERE ($2::timestamptz IS NULL OR ur.signed_up_at >= $2::timestamptz)
+      AND ($3::timestamptz IS NULL OR ur.signed_up_at <  $3::timestamptz)
+  ),
+  signups AS (
+    SELECT r.tenant_type, r.tenant_id, r.firm_id, r.tenant_name, r.tenant_email, r.plan_user_id,
+           r.code_id, r.source, r.signed_up_at, r.set_by, r.set_at, r.reason,
+           pu.id AS owner_user_id, pu.email AS owner_email,
+           (pu.approval_status = 'APPROVED') AS email_verified,
+           CASE
+             WHEN pu.active_plan_name IS NOT NULL AND lower(pu.active_plan_name) <> ALL($1::text[]) THEN 'PAID'
+             WHEN EXISTS (SELECT 1 FROM user_subscriptions us WHERE us.user_id = pu.id) THEN 'LAPSED'
+             ELSE 'FREE'
+           END AS plan_status
+    FROM signups_raw r
+    LEFT JOIN users pu ON pu.id = r.plan_user_id
   )`;
 
 function baseParams(filters) {
@@ -88,7 +122,9 @@ async function summary(pool, filters) {
             COUNT(*) FILTER (WHERE s.plan_status = 'PAID')::int AS paid_total,
             COUNT(*) FILTER (WHERE s.plan_status = 'PAID' AND s.code_id IS NOT NULL)::int AS paid_via_code,
             COUNT(*) FILTER (WHERE s.plan_status = 'LAPSED')::int AS lapsed_total,
-            COUNT(*) FILTER (WHERE s.plan_status = 'LAPSED' AND s.code_id IS NOT NULL)::int AS lapsed_via_code
+            COUNT(*) FILTER (WHERE s.plan_status = 'LAPSED' AND s.code_id IS NOT NULL)::int AS lapsed_via_code,
+            COUNT(*) FILTER (WHERE s.tenant_type = 'FIRM')::int AS firm_count,
+            COUNT(*) FILTER (WHERE s.tenant_type = 'SOLO')::int AS solo_count
      FROM signups s
      LEFT JOIN referral_codes rc ON rc.id = s.code_id
      LEFT JOIN sales_owners so ON so.id = rc.owner_id
@@ -106,6 +142,7 @@ async function summary(pool, filters) {
     paid: { total: num(r.paid_total), viaCode: num(r.paid_via_code) },
     lapsed: { total: num(r.lapsed_total), viaCode: num(r.lapsed_via_code) },
     paidPercent: paidPercent(r.paid_total, r.total),
+    byTenantType: { FIRM: num(r.firm_count), SOLO: num(r.solo_count) },
   };
 }
 
@@ -275,7 +312,15 @@ async function signups(pool, filters) {
 
   if (filters.search) {
     params.push(`%${filters.search}%`);
-    where.push(`(s.firm_name ILIKE $${params.length} OR s.owner_email ILIKE $${params.length})`);
+    where.push(`(s.tenant_name ILIKE $${params.length} OR s.owner_email ILIKE $${params.length})`);
+  }
+  if (filters.source && SIGNUP_SOURCES.includes(filters.source)) {
+    params.push(filters.source);
+    where.push(`s.source = $${params.length}`);
+  }
+  if (filters.tenantType && TENANT_TYPES.includes(filters.tenantType)) {
+    params.push(filters.tenantType);
+    where.push(`s.tenant_type = $${params.length}`);
   }
 
   const whereSql = `WHERE ${where.join(' AND ')}`;
@@ -307,13 +352,17 @@ async function signups(pool, filters) {
 
   const { rows } = await pool.query(
     `WITH ${SIGNUPS_CTE}
-     SELECT s.tenant_id, s.firm_name, s.owner_email, s.owner_user_id, s.signed_up_at, s.source, s.plan_status,
+     SELECT s.tenant_type, s.tenant_id, s.tenant_name, s.owner_email, s.owner_user_id, s.signed_up_at, s.source, s.plan_status,
             s.email_verified, rc.code,
-            (SELECT COUNT(DISTINCT u2.id)::int
-               FROM users u2
-              WHERE u2.is_active = TRUE
-                AND (u2.id = s.admin_user_id
-                     OR u2.id IN (SELECT fu.user_id FROM firm_users fu WHERE fu.firm_id = s.tenant_id))) AS seats
+            CASE WHEN s.tenant_type = 'FIRM' THEN
+              (SELECT COUNT(DISTINCT u2.id)::int
+                 FROM users u2
+                WHERE u2.is_active = TRUE
+                  AND (u2.id = s.plan_user_id
+                       OR u2.id IN (SELECT fu.user_id FROM firm_users fu WHERE fu.firm_id = s.firm_id)))
+            ELSE
+              (SELECT COUNT(*)::int FROM users u3 WHERE u3.id = s.plan_user_id AND u3.is_active = TRUE)
+            END AS seats
      ${from} ${whereSql}${statusSql}
      ORDER BY s.signed_up_at DESC, s.tenant_id
      LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
@@ -321,8 +370,9 @@ async function signups(pool, filters) {
   );
 
   const items = rows.map((r) => ({
+    tenantType: r.tenant_type,
     tenantId: r.tenant_id,
-    firmName: r.firm_name,
+    firmName: r.tenant_name,
     ownerEmail: r.owner_user_id ? r.owner_email : null,
     ownerAccountDeleted: !r.owner_user_id,
     signedUpAt: ts(r.signed_up_at),
@@ -335,7 +385,10 @@ async function signups(pool, filters) {
 
   return {
     scope,
-    filters: { from: filters.from || null, to: filters.to || null, status: filters.status || null, search: filters.search || null },
+    filters: {
+      from: filters.from || null, to: filters.to || null, status: filters.status || null, search: filters.search || null,
+      source: filters.source || null, tenantType: filters.tenantType || null,
+    },
     statusCounts,
     items,
     page,
@@ -348,6 +401,9 @@ async function signups(pool, filters) {
 module.exports = {
   OWNER_SORTS,
   SIGNUP_STATUSES,
+  TENANT_TYPES,
+  SIGNUP_SOURCES,
+  SIGNUPS_CTE,
   freePlanNames,
   trackingSince,
   paidPercent,

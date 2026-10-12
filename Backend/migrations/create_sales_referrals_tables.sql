@@ -71,3 +71,20 @@ CREATE TABLE IF NOT EXISTS tenant_referral_history (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_referral_history_tenant
   ON tenant_referral_history (tenant_id, changed_at DESC);
+
+-- Attribution history for SOLO lawyer sign-ups (user_referrals is keyed on users.id, an integer,
+-- which tenant_referral_history.tenant_id (uuid) cannot hold). user_referrals itself is owned by
+-- the user-side auth service and is not created or altered here.
+CREATE TABLE IF NOT EXISTS user_referral_history (
+  id                SERIAL PRIMARY KEY,
+  user_id           INTEGER NOT NULL,
+  previous_code_id  UUID,
+  new_code_id       UUID,
+  previous_source   VARCHAR(10),
+  reason            VARCHAR(500),
+  changed_by        INTEGER,
+  changed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_referral_history_user
+  ON user_referral_history (user_id, changed_at DESC);
