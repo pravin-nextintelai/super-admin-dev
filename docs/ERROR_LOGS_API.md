@@ -167,6 +167,10 @@ and `PATCH /:id/resolve`.
 | `user_message` | string\|null | The message shown to the user |
 | `error_type` | string\|null | Exception class, e.g. `ProviderUnavailableError` |
 | `error_message` | string\|null | Internal error message |
+| `error_summary` | string\|null | Plain-language reason written by the service for non-technical readers (migration 187), e.g. "The request failed because the user was not logged in or the session had expired (HTTP 401)." `null` until the service fills it. |
+| `error_code` | string\|null | Machine-readable reason: `AUTH_EXPIRED`, `PERMISSION_DENIED`, `NOT_FOUND`, `VALIDATION_ERROR`, `INTERNAL_ERROR`, `AI_QUOTA_EXCEEDED`, `AI_SAFETY_BLOCK`, `UPSTREAM_AUTH_FAILED`, `UPSTREAM_TIMEOUT`, `DATABASE_UNAVAILABLE`, `PAYMENT_CANCELLED`, `BROWSER_NETWORK_ERROR`, `JOB_FAILED`, … (migration 188) |
+| `what_happened` | string\|null | WHAT, plain language: "The user tried to open the plan details, but the request was refused (HTTP 403)." (migration 188) |
+| `suggested_fix` | string\|null | "User: log in again. Developers: renew the token before it expires …" (migration 188) |
 | `has_stack_trace` | bool | Whether `stack_trace` is present |
 | `stack_trace` | string\|null | **detail only** |
 | `external` | object\|null | Outbound-call details when `source = EXTERNAL_API` (see §2.2), else `null` |
@@ -255,7 +259,9 @@ listed on each). Unknown params are ignored; invalid values return `400 VALIDATI
 | `status_code` | csv int | all | each 100–599, e.g. `500,502` |
 | `status_class` | string | — | `2xx` · `3xx` · `4xx` · `5xx` |
 | `error_type` | string | — | exact, case-insensitive, e.g. `ValueError` |
-| `provider` | string | — | `external_provider`, exact, case-insensitive, e.g. `gemini` |
+| `provider` (alias `external_provider`) | string | — | `external_provider`, exact, case-insensitive, e.g. `GEMINI` |
+| `http_method` | csv | all | HTTP verbs, e.g. `GET,POST` |
+| `error_code` | csv | all | upper-cased, e.g. `AUTH_EXPIRED,NOT_FOUND` |
 | `user` | string | — | numeric id **or** email. Resolved through the Auth DB first, so an email also finds rows that only recorded the user id and an id also finds rows that only recorded the email. The matched account is echoed as `filters.user_resolved` (`null` when the value is not a known user — plain column matching is still applied). |
 | `user_id` | string | — | exact match on `user_id` only |
 | `user_email` | string | — | exact (case-insensitive) match on `user_email` only |
@@ -264,11 +270,11 @@ listed on each). Unknown params are ignored; invalid values return `400 VALIDATI
 | `endpoint` | string | — | contains, case-insensitive, on the actual path |
 | `route` | string | — | contains, case-insensitive, on the route template (`payload.route`, falling back to `endpoint`) |
 | `method` | string | — | contains, case-insensitive (code location) |
-| `resolved` | `all` · `true` · `false` | `all` | `1`/`0`/`yes`/`no` also accepted |
+| `resolved` (alias `is_resolved`) | `all` · `true` · `false` | `all` | `1`/`0`/`yes`/`no` also accepted |
 | `has_user` | bool | — | `true` = only rows attributed to a user; `false` = only anonymous rows |
 | `origin` | `browser` · `server` · `all` | `all` | browser-reported rows vs. server-side rows |
 | `exclude_debug` | bool | `false` | `true` drops rows from the errorlog `_debug` routes / demo triggers |
-| `search` | string ≤ 200 | — | contains, case-insensitive, across `error_message`, `user_message`, `error_type`, `endpoint`, `method`, `user_email`, `user_id`, `request_id`, `resource_id`, `ip_address`, `service_name`, `external_endpoint`, `external_error_code` |
+| `search` (alias `q`) | string ≤ 200 | — | contains, case-insensitive, across `error_message`, `error_summary`, `what_happened`, `error_code`, `user_message`, `error_type`, `endpoint`, `method`, `user_email`, `user_id`, `request_id`, `resource_id`, `ip_address`, `service_name`, `external_endpoint`, `external_error_code` |
 | `from` | `YYYY-MM-DD` | — | IST calendar day, inclusive |
 | `to` | `YYYY-MM-DD` | — | IST calendar day, inclusive; must be ≥ `from` |
 | `since_hours` | int 1–8784 | — | rolling window, e.g. `24` |
@@ -448,7 +454,7 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
 | `last_error_at`, `last_critical_at` (+ `_ist`) | Most recent row / most recent CRITICAL row |
 
 `top_issues` has the shape of `GET /issues` rows (max 10), `top_users` the shape of `GET /users` rows (max 10),
-`top_endpoints` groups by service + method + **route template** (`payload.route`, else the path) so `/api/files/123` and `/api/files/456` count together; `endpoint` on each entry is one sample path (max 10). `recent_unresolved` is up to 5 full log rows.
+`top_reasons` lists the 10 most common reasons (`value` = `error_summary`, plus `error_code`) with total / unresolved / affected users / last seen. `top_endpoints` groups by service + method + **route template** (`payload.route`, else the path) so `/api/files/123` and `/api/files/456` count together; `endpoint` on each entry is one sample path (max 10). `recent_unresolved` is up to 5 full log rows.
 
 ---
 
@@ -1135,6 +1141,7 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
 | `log` | The row with every column (§2), including `stack_trace`, `payload`, `external.response` |
 | `issue` | Summary of all rows sharing this fingerprint (`null` when the row has no fingerprint) |
 | `audit` | The `api_audit_logs` row of the request that produced this error (one audit row per request; a failed one stores `error_log_id`). Matched by `error_log_id`, else by `request_id` + service (`matched_by` says which). Carries what the admin Audit Logs table shows: `action` (VIEW/CREATE/UPDATE/DELETE), `method` (handler, e.g. `FolderService.list_folders`), `resource_type`, `resource_id`, `status` (`SUCCESS`/`FAILED`), `duration_ms`, `user_agent`, plus a copy of `error_type` / `error_message` / `user_message`. `null` for browser reports, jobs, and when the audit table is absent. |
+| `recurrences` | `{ fingerprint, days: 7, count, unresolved, affected_users }` — how often the same problem recurred in the last 7 days |
 | `related.same_request` | Other rows with the same `request_id`, oldest first, max 10 — what else failed in that request |
 | `related.same_issue` | Other rows with the same `fingerprint`, newest first, max 10 |
 
@@ -1163,7 +1170,8 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `resolved` | boolean | no, default `true` | `true` = resolve, `false` = reopen. `"true"`/`"false"`/`1`/`0`/`"yes"`/`"no"` accepted. |
-| `note` | string ≤ 5000 | no | Stored as `resolution_note` when resolving; ignored when reopening |
+| `note` (alias `resolution_note`) | string ≤ 5000 | no | Stored as `resolution_note` when resolving; ignored when reopening |
+| `resolved_by` | string ≤ 255 | no | Overrides the recorded resolver; defaults to the caller's admin email (or `admin-token`) |
 
 **Request — resolve**
 
@@ -1246,7 +1254,8 @@ curl -s -X PATCH -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: appli
 | `ids` | string[] of UUIDs | one of | 1–500 ids |
 | `fingerprint` | string | one of | every row with this fingerprint |
 | `resolved` | boolean | no, default `true` | |
-| `note` | string ≤ 5000 | no | applied to every row resolved by this call |
+| `note` (alias `resolution_note`) | string ≤ 5000 | no | applied to every row resolved by this call |
+| `resolved_by` | string ≤ 255 | no | overrides the recorded resolver |
 
 **Request — close every occurrence of an issue**
 
@@ -1302,6 +1311,28 @@ already in the requested state are silently skipped (`changed` can be `0`).
 Sending both `ids` and `fingerprint` also fails with `400` (`"value" contains a conflict between exclusive peers [ids, fingerprint]`).
 
 ---
+
+### 4.9b `PATCH /api/admin/error-logs/resolve-fingerprint` — close every open occurrence of an issue
+
+Body: `{ "fingerprint": "<fp>", "resolved_by": "admin@jurinex", "resolution_note": "fixed in …" }` (`resolved_by` and
+`resolution_note` optional, `note` also accepted). Only rows still unresolved are touched.
+
+```json
+{
+  "success": true,
+  "data": {
+    "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "resolved": true,
+    "resolved_by": "admin@jurinex",
+    "changed": 2,
+    "ids": ["5544eb3d-6236-449e-bb2d-62d51969aac4", "889e5ad0-7082-47cc-9295-fc4195c5b63c"],
+    "occurrences": { "total": 2, "unresolved": 0 }
+  }
+}
+```
+
+`400` when `fingerprint` is missing. Same effect as `PATCH /resolve { fingerprint, resolved: true }`.
+
 
 ### 4.10 `DELETE /api/admin/error-logs/:id` — delete one row
 
@@ -1451,7 +1482,7 @@ more than one error).
 | Database / table | **Document_DB** → `public.api_audit_logs` (same docPool as `error_logs`) |
 | Owner | agentic-document-service (migrations 184, 185, 186). This backend **only reads** the table. Missing table → `503 AUDIT_LOGS_TABLE_MISSING`. |
 | Auth / roles | Same as error logs: `Authorization: Bearer <ADMIN_TOKEN or dashboard JWT>`; `super-admin`, `admin`. Read-only — there is no resolve or delete. |
-| Default window | When neither `from` nor `since_hours` is given, the **last 7 days**. |
+| Default window | When neither `from` nor `since_hours` is given, the **last 24 hours**. |
 | Pings | `/api/auth/activity/ping` rows are hidden by default (`exclude_pings=true`); pass `exclude_pings=false` to see them. |
 | Retention | Rows older than `ERROR_LOG_AUDIT_RETENTION_DAYS` (90) are deleted daily by the owner. |
 | `stack_trace` | Returned **only** by `GET /:id`. The list and the CSV never include it. |
@@ -1487,6 +1518,11 @@ more than one error).
 | `streaming` | bool | `payload.streaming` — the response was a stream |
 | `error_log_id`, `error_log_ids` | uuid\|null, uuid[] | Link(s) to `error_logs` for a failed call (`[]` on success) |
 | `error_type`, `error_message`, `user_message` | string\|null | The failure (exact internal error, and what the user saw); all `null` on success |
+| `error_summary` | string\|null | Plain-language reason for a FAILED call (the "Reason" column); `null` on success and until the service fills it (migration 187) |
+| `error_code` | string\|null | Machine-readable reason: `AUTH_EXPIRED`, `PERMISSION_DENIED`, `NOT_FOUND`, `VALIDATION_ERROR`, `INTERNAL_ERROR`, `AI_QUOTA_EXCEEDED`, `AI_SAFETY_BLOCK`, `UPSTREAM_AUTH_FAILED`, `UPSTREAM_TIMEOUT`, `DATABASE_UNAVAILABLE`, `PAYMENT_CANCELLED`, `BROWSER_NETWORK_ERROR`, `JOB_FAILED`, … (migration 188) |
+| `what_happened` | string\|null | WHAT, plain language: "The user tried to open the plan details, but the request was refused (HTTP 403)." (migration 188) |
+| `suggested_fix` | string\|null | "User: log in again. Developers: renew the token before it expires …" (migration 188) |
+| `display` | string\|null | `toast` · `banner` · `inline` — how the browser showed `user_message` (`payload.display`), `null` for server rows |
 | `has_stack_trace` | bool | Whether `stack_trace` exists; the text itself is **detail only** |
 | `stack_trace` | string\|null | **detail only** |
 | `source`, `category`, `severity`, `external_provider` | string\|null | Classification the services may put in `payload` (`HTTP` / `JOB` / `PROCESS` / `EXTERNAL_API`, …); `null` when absent |
@@ -1503,7 +1539,7 @@ more than one error).
 | `service` | csv | all | `service_name` values |
 | `environment` | csv | all | |
 | `status` | `SUCCESS` · `FAILED` · `ALL` | all | |
-| `method` | csv | all | HTTP verbs, e.g. `POST,PUT` |
+| `method` (alias `http_method`) | csv | all | HTTP verbs, e.g. `POST,PUT` |
 | `endpoint` | string | — | **prefix** match, case-insensitive (`/api/files`) |
 | `route` | string | — | contains match on the route template (falls back to the path) |
 | `resource_type` | csv | all | e.g. `STORAGE FOLDER,CASE` (case-insensitive) |
@@ -1511,14 +1547,15 @@ more than one error).
 | `request_id` | string | — | exact — every row of one request across services |
 | `error_log_id` | uuid | — | the audit row(s) that produced one error |
 | `error_type` | string | — | exact, case-insensitive |
+| `error_code` | csv | all | upper-cased, e.g. `AUTH_EXPIRED,NOT_FOUND` |
 | `status_code` | csv int | all | `401,404` |
 | `status_class` | `2xx` · `3xx` · `4xx` · `5xx` | — | |
-| `q` | string ≤ 200 | — | contains, case-insensitive, across endpoint, route, method, error_type, error_message, user_message, user_email, request_id, resource_id |
+| `q` | string ≤ 200 | — | contains, case-insensitive, across endpoint, route, method, error_type, error_message, error_summary, what_happened, error_code, user_message, user_email, request_id, resource_id |
 | `exclude_pings` | bool | `true` | hide `/api/auth/activity/ping` |
 | `kind` | `request` · `browser` · `job` · `all` | all | |
 | `min_duration_ms` | int | — | slow calls only |
 | `page`, `page_size` (alias `limit`) | int | `1`, `50` | max 200 (list / export only) |
-| `sort` | string | `newest` | `newest` · `oldest` · `slowest` · `status` (failed first) · `service` · `user` (list / export only) |
+| `sort` | string | `newest` | `newest` · `oldest` · `slowest` · `status` (failed first) · `service` · `user`; aliases `created_at` (= newest) and `duration_ms` (= slowest) (list / export only) |
 
 Every response echoes the applied filters under `data.filters` (including the resolved `from` / `to` in UTC and IST).
 
@@ -1592,6 +1629,8 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
 ```
 
 `UNKNOWN` in `by_action` / `by_resource_type` means the service did not classify the call (`null` in the row).
+`top_reasons` (not shown above) is the 10 most common reasons among FAILED rows, grouped by `error_code` + `error_summary`:
+`[{ "error_code": "AUTH_EXPIRED", "error_summary": "The request failed because …", "n": 12, "failed": 12, "users": 2, "services": 1, "error_type": "HttpErrorResponse401", "last_seen": "…", "last_seen_ist": {} }]`.
 
 ### 7.5 `GET /api/admin/audit-logs/meta`
 
@@ -1801,6 +1840,10 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
 | `audit` | The row with every column, including `stack_trace` |
 | `error` | The `error_logs` row `error_log_id` points at (or the first linked one); `null` on success |
 | `errors` | Every linked error row (`error_log_id` ∪ `payload.error_log_ids`), oldest first |
+| `request_trace` | Every audit row with the same `request_id` across services (this one included), oldest first, max 50 — the whole request end to end (gateway → service → payment …), each in the list-row shape |
+| `same_request` | The **other** rows of the same request, compact (`id, service_name, http_method, endpoint, route, status, status_code, duration_ms, error_code, created_at`) — gateway → service → downstream in one click |
+| `recurrences` | `{ fingerprint, days: 7, count, unresolved, affected_users }` for the linked error's fingerprint (`count: 0` when there is no linked error) |
+| `audit.error_stack`, `audit.error_payload`, `audit.source` / `category` / `severity`, `audit.external`, `audit.latency_ms`, `audit.fingerprint`, `audit.is_resolved` / `resolved_by` / `resolved_at` / `resolution_note` | Copied from the linked `error_logs` row (the spec's LEFT JOIN) so the drawer can fall back to them when the audit row itself has no stack / classification; all `null` on success |
 
 `400` if `:id` is not a UUID, `404` if unknown.
 
