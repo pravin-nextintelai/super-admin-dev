@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpDown, ChevronDown, ChevronUp, Plus, Search, Ticket, UserMinus, Users, X, BadgeCheck, Clock, CircleDashed, RefreshCw } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, ChevronUp, Plus, Search, Table2, Ticket, UserMinus, Users, X, BadgeCheck, Clock, CircleDashed, RefreshCw } from 'lucide-react';
 import { KpiCard } from '../../../pages/dashboard/userAnalytics/AnalyticsCharts';
 import { SALES_REFERRALS_TEXT, SALES_REFERRALS_TOOLTIPS } from '../constants/salesReferrals.text';
+import { REFERRAL_DATA_TEXT } from '../constants/referralData.text';
 import { OWNER_TYPE_FILTER } from '../types/salesReferrals.types';
 import { getOwnersReport, getSummary } from '../services/salesReferrals.api';
 import { errorText, fmtDate, fmtNum, pct } from '../utils/salesReferrals.utils';
@@ -96,6 +97,7 @@ const SalesReferralsOverviewPage = () => {
         </div>
         <div className="flex items-center gap-2">
           <Button icon={RefreshCw} onClick={load} disabled={refreshing} aria-label="Refresh" className={refreshing ? '[&>svg]:animate-spin' : ''}>Refresh</Button>
+          <Button icon={Table2} onClick={() => navigate(salesReferralsPath.data(rangeSearch))} title={REFERRAL_DATA_TEXT.entryTitle}>{REFERRAL_DATA_TEXT.entryButton}</Button>
           <Button variant="primary" icon={Plus} onClick={() => setDialogOpen(true)}>{T.newOwner}</Button>
         </div>
       </div>

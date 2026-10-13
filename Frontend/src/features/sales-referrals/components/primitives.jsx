@@ -148,8 +148,9 @@ export const Field = ({ id, label, required, optional, hint, error, children, cl
   </div>
 );
 
-export const Switch = ({ id, checked, onChange, label, description }) => (
-  <div className="flex items-start gap-3">
+/** `typeBadge` shows the Internal / Outsourced badge next to the label (owner forms); off for plain toggles. */
+export const Switch = ({ id, checked, onChange, label, description, typeBadge = true, className = '' }) => (
+  <div className={`flex items-start gap-3 ${className}`}>
     <button
       id={id}
       type="button"
@@ -163,7 +164,7 @@ export const Switch = ({ id, checked, onChange, label, description }) => (
     <div className="min-w-0">
       <label htmlFor={id} className="text-sm font-medium text-slate-700 cursor-pointer flex items-center gap-2">
         {label}
-        <TypeBadge internal={checked} />
+        {typeBadge && <TypeBadge internal={checked} />}
       </label>
       {description && <p className="text-xs text-slate-400 mt-0.5">{description}</p>}
     </div>

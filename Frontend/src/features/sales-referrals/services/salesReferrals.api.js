@@ -65,7 +65,7 @@ const handle = async (res) => {
 };
 
 /** Drops empty params; arrays become comma-separated; `dateRange` expands to from/to. */
-const qs = (params = {}) => {
+export const qs = (params = {}) => {
   const flat = {};
   Object.entries(params).forEach(([k, v]) => {
     if (v === undefined || v === null || v === '') return;
@@ -98,6 +98,8 @@ const request = async (url, { method = 'GET', body } = {}) => {
 };
 const get = (url) => request(url);
 const post = (url, body = {}) => request(url, { method: 'POST', body });
+// Shared with services/referralData.api.js so both services use one auth/error path.
+export { get as httpGet, post as httpPost, handle as parseResponse };
 const put = (url, body) => request(url, { method: 'PUT', body });
 const patch = (url, body) => request(url, { method: 'PATCH', body });
 

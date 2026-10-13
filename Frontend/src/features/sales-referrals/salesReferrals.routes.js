@@ -5,6 +5,7 @@ export const SALES_REFERRALS_BASE = '/dashboard/sales-referrals';
 export const SALES_REFERRALS_ROUTES = Object.freeze({
   // Relative segments used by <Route> in App.jsx
   overview: 'sales-referrals',
+  data: 'sales-referrals/data',
   owner: 'sales-referrals/:ownerId',
   codeSignups: 'sales-referrals/:ownerId/codes/:codeId',
   ownerSignups: 'sales-referrals/:ownerId/signups',
@@ -15,6 +16,7 @@ const withSearch = (path, search) => (search ? `${path}${search.startsWith('?') 
 
 export const salesReferralsPath = Object.freeze({
   overview: (search = '') => withSearch(SALES_REFERRALS_BASE, search),
+  data: (search = '') => withSearch(`${SALES_REFERRALS_BASE}/data`, search),
   owner: (ownerId, search = '') => withSearch(`${SALES_REFERRALS_BASE}/${encodeURIComponent(ownerId)}`, search),
   codeSignups: (ownerId, codeId, search = '') =>
     withSearch(`${SALES_REFERRALS_BASE}/${encodeURIComponent(ownerId)}/codes/${encodeURIComponent(codeId)}`, search),

@@ -36,6 +36,7 @@ import AuditLogs from './pages/dashboard/AuditLogs';
 import SalesReferralsOverviewPage from './features/sales-referrals/pages/SalesReferralsOverviewPage';
 import SalesOwnerDetailPage from './features/sales-referrals/pages/SalesOwnerDetailPage';
 import ReferralSignupsPage from './features/sales-referrals/pages/ReferralSignupsPage';
+import ReferralDataPage from './features/sales-referrals/pages/ReferralDataPage';
 import { SALES_REFERRALS_ROUTES } from './features/sales-referrals/salesReferrals.routes';
 import { createDebugLogger } from './utils/debugLogger';
 import './App.css';
@@ -151,6 +152,7 @@ function App() {
             <Route path="audit-logs" element={<RequireRole allow={[]}><AuditLogs /></RequireRole>} />
             {/* Sales Referrals — super-admin only */}
             <Route path={SALES_REFERRALS_ROUTES.overview} element={<RequireRole allow={[]}><SalesReferralsOverviewPage /></RequireRole>} />
+            <Route path={SALES_REFERRALS_ROUTES.data} element={<RequireRole allow={[]}><ReferralDataPage /></RequireRole>} />
             <Route path={SALES_REFERRALS_ROUTES.owner} element={<RequireRole allow={[]}><SalesOwnerDetailPage /></RequireRole>} />
             <Route path={SALES_REFERRALS_ROUTES.codeSignups} element={<RequireRole allow={[]}><ReferralSignupsPage /></RequireRole>} />
             <Route path={SALES_REFERRALS_ROUTES.ownerSignups} element={<RequireRole allow={[]}><ReferralSignupsPage /></RequireRole>} />
