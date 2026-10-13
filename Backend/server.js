@@ -68,6 +68,8 @@ const marketingPromoRoutes = require('./routes/marketingPromoRoutes');
 const publicPromoRoutes = require('./routes/publicPromoRoutes');
 const errorLogRoutes = require('./routes/errorLogRoutes');
 const auditLogRoutes = require('./routes/auditLogRoutes');
+const onboardedUsersRoutes = require('./routes/onboardedUsersRoutes');
+const referralDataRoutes = require('./routes/referralDataRoutes');
 const salesReferralsRoutes = require('./routes/salesReferralsRoutes');
 const { ensureContactEnquirySchema } = require('./services/contactEnquiryService');
 const { ensureNewsletterSubscriberSchema } = require('./services/newsletterSubscriberService');
@@ -256,8 +258,13 @@ console.log('📌 /api/admin/error-logs → Platform error logs (Document_DB err
 app.use('/api/admin/error-logs', errorLogRoutes(pool, docPool));
 console.log('📌 /api/admin/audit-logs → Activity & Error Logs (Document_DB api_audit_logs; one row per API call, owned by agentic-document-service)');
 app.use('/api/admin/audit-logs', auditLogRoutes(pool, docPool));
+console.log('📌 /api/admin/onboarded-users → Users by onboarding channel (self / internal / outsourced) + complete subscription history (Auth DB + Payment DB), CSV');
+app.use('/api/admin/onboarded-users', onboardedUsersRoutes(pool, paymentPool));
 
 console.log('📌 /api/admin/sales-referrals → Sales owners, referral codes, attribution reports (Auth DB; workspaces = firms)');
+console.log('📌 /api/admin/sales-referrals/data → All referral data: workspaces + plan purchases + CSV (Auth DB + Payment DB)');
+app.use('/api/admin/sales-referrals/data', referralDataRoutes(pool, paymentPool));
+app.use('/api/v1/admin/sales-referrals/data', referralDataRoutes(pool, paymentPool));
 app.use('/api/admin/sales-referrals', salesReferralsRoutes(pool));
 // Spec base path (docs/sales-referrals-admin-api.md) — same router.
 app.use('/api/v1/admin/sales-referrals', salesReferralsRoutes(pool));

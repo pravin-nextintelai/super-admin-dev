@@ -23,6 +23,8 @@ Portal roles (`super-admin`, `user-admin`, `account-admin`, `finance-admin`, `ma
 | Contact Enquiries (Marketing) | `/api/admin/contact-enquiries` | Auth DB (`contact_enquiries`) — see [H](#h-contact-enquiries-marketing) |
 | Error Logs (Platform) | `/api/admin/error-logs` | Document_DB (`error_logs`) + Auth DB (user lookup) — see [I](#i-error-logs-platform) / [docs/ERROR_LOGS_API.md](../docs/ERROR_LOGS_API.md) |
 | Activity & Error Logs | `/api/admin/audit-logs` | Document_DB (`api_audit_logs`, one row per API call) + Auth DB (user lookup) — see [J](#j-activity--error-logs-api_audit_logs) / [docs/ERROR_LOGS_API.md §7](../docs/ERROR_LOGS_API.md) |
+| Onboarded Users & Subscription History | `/api/admin/onboarded-users` | Auth DB (users, firms, referrals → channel SELF / INTERNAL / OUTSOURCED) + Payment DB (subscriptions, payments, top-ups, storage add-ons); CSV — see [docs/ONBOARDED_USERS_API.md](../docs/ONBOARDED_USERS_API.md) |
+| All referral data (Sales Referrals screen) | `/api/admin/sales-referrals/data` | Auth DB (firms, users, referrals) + Payment DB; workspaces, plan purchases, CSV with column selection — see [docs/REFERRAL_DATA_API.md](../docs/REFERRAL_DATA_API.md) |
 | Public contact-form intake | `/api/public/contact` | Auth DB — **no auth**, rate-limited, own CORS |
 | Health Check | `/api/admin/health` | Main DB + Citation DB |
 

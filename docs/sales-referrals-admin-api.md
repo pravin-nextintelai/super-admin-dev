@@ -936,3 +936,7 @@ All 17 APIs are implemented in this repository. Where the backend's real schema 
 
 - Public signup APIs (code status check, register) that insert `tenant_referrals` rows with `source = SIGNUP` live in the signup-side auth service. Until they exist, reports only contain workspaces attached through A16.
 - A workspace with no `tenant_referrals` row answers `referredBy: DIRECT, tracked: false`.
+
+### 9.5 All referral data screen (2026-10-13)
+
+The "All referral data" page (one row per workspace / solo user with owner, code, attribution, seats, current plan, plan history; Plan purchases tab; CSV export with kind / scope / column selection) is served by `/api/admin/sales-referrals/data` — see [REFERRAL_DATA_API.md](REFERRAL_DATA_API.md).

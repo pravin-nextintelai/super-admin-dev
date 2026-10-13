@@ -1325,6 +1325,258 @@ async function runTests() {
     }
 
     // ════════════════════════════════════════════════════════════════════════
+    // L) Onboarded users + subscription history — /api/admin/onboarded-users
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('\n── L) Onboarded Users ──');
+    let onboardUserId = null;
+    {
+        const r = await request('GET', '/api/admin/onboarded-users/summary');
+        const d = r.data?.data;
+        const sum = Array.isArray(d?.by_channel) ? d.by_channel.reduce((n, c) => n + c.users, 0) : -1;
+        const pass = r.status === 200 && typeof d?.totals?.users === 'number' && typeof d?.totals?.total_paid === 'number'
+            && Array.isArray(d?.by_channel) && d.by_channel.map(c => c.channel).join(',') === 'SELF,INTERNAL,OUTSOURCED'
+            && sum === d.totals.users && Array.isArray(d?.by_owner) && Array.isArray(d?.by_plan);
+        addResult({
+            name: 'Onboarded Users Summary', group: 'Onboarded Users', method: 'GET', path: '/api/admin/onboarded-users/summary',
+            purpose: 'Users / paid / lapsed / free / revenue totals, split by onboarding channel (SELF, INTERNAL, OUTSOURCED), sales owner, plan and account type. Channel buckets must add up to the total.',
+            inputs: 'Query: same filters as the list', curl: buildCurl('GET', '/api/admin/onboarded-users/summary'),
+            expected: '200 + totals, by_channel (3 buckets summing to totals.users), by_owner[], by_plan[]', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/onboarded-users/meta');
+        const d = r.data?.data;
+        const pass = r.status === 200 && Array.isArray(d?.channels) && Array.isArray(d?.sales_owners) && Array.isArray(d?.monthly_plans) && Array.isArray(d?.plan_statuses);
+        addResult({
+            name: 'Onboarded Users Meta', group: 'Onboarded Users', method: 'GET', path: '/api/admin/onboarded-users/meta',
+            purpose: 'Channels (with aliases), sales owners, referral codes, plans, account types for filter dropdowns.',
+            inputs: 'Headers: Authorization', curl: buildCurl('GET', '/api/admin/onboarded-users/meta'),
+            expected: '200 + channels[], sales_owners[], monthly_plans[]', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { page: 1, limit: 10, sort: 'revenue' };
+        const r = await request('GET', '/api/admin/onboarded-users', { params });
+        const d = r.data?.data;
+        const first = d?.users?.[0];
+        const pass = r.status === 200 && Array.isArray(d?.users) && typeof d?.pagination?.total === 'number' && d?.summary
+            && (!first || Boolean(first.id && first.email && first.onboarding?.channel && first.plan?.status && first.subscription_summary && typeof first.subscription_summary.total_paid === 'number' && first.created_at_ist?.display));
+        addResult({
+            name: 'Onboarded Users List', group: 'Onboarded Users', method: 'GET', path: '/api/admin/onboarded-users',
+            purpose: 'Every user with workspace, onboarding channel / referral code / sales owner, current plan + status (PAID / LAPSED / FREE) and a subscription summary (counts, totals, first / last payment) from the Payment DB.',
+            inputs: 'Query: page, limit, sort, channel, owner_id, code, source, account_type, plan_status, plan, has_payments, search, from, to',
+            curl: buildCurl('GET', '/api/admin/onboarded-users', {}, null, params),
+            expected: '200 + users[] with onboarding, plan, subscription_summary', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+        if (pass && first) onboardUserId = first.id;
+    }
+    {
+        const params = { channel: 'agency,internal', limit: 100 };
+        const r = await request('GET', '/api/admin/onboarded-users', { params });
+        const users = r.data?.data?.users || [];
+        const pass = r.status === 200 && users.every(u => ['INTERNAL', 'OUTSOURCED'].includes(u.onboarding.channel) && u.onboarding.referral_code && u.onboarding.sales_owner)
+            && Array.isArray(r.data?.data?.filters?.channel) && r.data.data.filters.channel.includes('OUTSOURCED');
+        addResult({
+            name: 'Onboarded Users List (channel filter)', group: 'Onboarded Users', method: 'GET', path: '/api/admin/onboarded-users',
+            purpose: 'channel=agency,internal (agency is an alias of OUTSOURCED) returns only referred users, each with a code and sales owner.',
+            inputs: 'Query: channel', curl: buildCurl('GET', '/api/admin/onboarded-users', {}, null, params),
+            expected: '200 + only INTERNAL / OUTSOURCED users', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { plan_status: 'PAID', limit: 100 };
+        const r = await request('GET', '/api/admin/onboarded-users', { params });
+        const users = r.data?.data?.users || [];
+        const pass = r.status === 200 && users.every(u => u.plan.status === 'PAID' && u.plan.is_paid);
+        addResult({
+            name: 'Onboarded Users List (plan_status=PAID)', group: 'Onboarded Users', method: 'GET', path: '/api/admin/onboarded-users',
+            purpose: 'plan_status filters on the derived status (PAID = paid active_plan_name; LAPSED = not paid now but has subscriptions; FREE otherwise).',
+            inputs: 'Query: plan_status=PAID', curl: buildCurl('GET', '/api/admin/onboarded-users', {}, null, params),
+            expected: '200 + every user PAID', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { channel: 'bogus' };
+        const r = await request('GET', '/api/admin/onboarded-users', { params });
+        addResult({
+            name: 'Onboarded Users List (INVALID channel — expect 400)', group: 'Onboarded Users', method: 'GET', path: '/api/admin/onboarded-users',
+            purpose: 'channel must be self, internal, outsourced (alias agency).',
+            inputs: 'Query: channel=bogus', curl: buildCurl('GET', '/api/admin/onboarded-users', {}, null, params),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_ERROR',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    if (onboardUserId) {
+        const r = await request('GET', `/api/admin/onboarded-users/${onboardUserId}`);
+        const d = r.data?.data;
+        const h = d?.subscription_history;
+        const pass = r.status === 200 && d?.user?.id === onboardUserId
+            && h && ['subscriptions', 'payments', 'topups', 'storage_addons'].every(k => Array.isArray(h[k]))
+            && Array.isArray(d?.timeline) && d.timeline.length >= 1 && d.timeline[0].type === 'SIGNUP'
+            && Array.isArray(d?.referral_history) && Object.prototype.hasOwnProperty.call(d, 'storage');
+        addResult({
+            name: 'Onboarded User Detail', group: 'Onboarded Users', method: 'GET', path: `/api/admin/onboarded-users/${onboardUserId}`,
+            purpose: 'One user with the complete subscription history: every subscription (plan, dates, tokens), payment, token top-up and storage add-on, storage usage, referral-code history and a chronological timeline.',
+            inputs: 'Path: userId', curl: buildCurl('GET', `/api/admin/onboarded-users/${onboardUserId}`),
+            expected: '200 + user, subscription_history{subscriptions,payments,topups,storage_addons}, timeline[], referral_history[]', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/onboarded-users/999999999');
+        addResult({
+            name: 'Onboarded User Detail (UNKNOWN — expect 404)', group: 'Onboarded Users', method: 'GET', path: '/api/admin/onboarded-users/999999999',
+            purpose: 'Unknown user id returns NOT_FOUND.', inputs: 'Path: userId', curl: buildCurl('GET', '/api/admin/onboarded-users/999999999'),
+            expected: '404 NOT_FOUND', actual: r.status, pass: r.status === 404 && r.data?.error?.code === 'NOT_FOUND',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const r = await request('GET', '/api/admin/onboarded-users/export');
+        const body = typeof r.data === 'string' ? r.data : '';
+        const pass = r.status === 200 && body.includes('Onboarding channel') && body.includes('Total paid') && body.includes('Sales owner');
+        addResult({
+            name: 'Onboarded Users CSV (users)', group: 'Onboarded Users', method: 'GET', path: '/api/admin/onboarded-users/export',
+            purpose: 'CSV, one row per user: profile, workspace, onboarding channel / code / owner, plan status, current subscription, counts and totals.',
+            inputs: 'Query: same filters as the list, mode=users', curl: buildCurl('GET', '/api/admin/onboarded-users/export'),
+            expected: '200 text/csv with onboarding + subscription columns', actual: r.status, pass,
+            latency: r.latency, sample: body.slice(0, 600), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { mode: 'history', has_subscription: 'true' };
+        const r = await request('GET', '/api/admin/onboarded-users/export', { params });
+        const body = typeof r.data === 'string' ? r.data : '';
+        const pass = r.status === 200 && body.includes('Event type') && body.includes('SUBSCRIPTION');
+        addResult({
+            name: 'Onboarded Users CSV (history)', group: 'Onboarded Users', method: 'GET', path: '/api/admin/onboarded-users/export',
+            purpose: 'CSV, one row per subscription / payment / top-up / storage add-on event with the user columns repeated.',
+            inputs: 'Query: mode=history (+ filters)', curl: buildCurl('GET', '/api/admin/onboarded-users/export', {}, null, params),
+            expected: '200 text/csv with Event type column and SUBSCRIPTION rows', actual: r.status, pass,
+            latency: r.latency, sample: body.slice(0, 600), errorDetail: r.error,
+        });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // M) All referral data — /api/admin/sales-referrals/data
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('\n── M) All referral data ──');
+    let refAccountId = null;
+    {
+        const r = await request('GET', '/api/admin/sales-referrals/data/summary');
+        const d = r.data?.data;
+        const sum = Array.isArray(d?.by_owner_type) ? d.by_owner_type.reduce((n, t) => n + t.accounts, 0) : -1;
+        const pass = r.status === 200 && typeof d?.totals?.accounts === 'number' && typeof d?.totals?.total_paid === 'number'
+            && d.totals.via_code + d.totals.direct === d.totals.accounts && sum === d.totals.accounts && Array.isArray(d?.by_owner);
+        addResult({
+            name: 'Referral Data Summary', group: 'Referral Data', method: 'GET', path: '/api/admin/sales-referrals/data/summary',
+            purpose: 'Stat cards for the All referral data screen: accounts, via code, direct, paid / lapsed / free, seats, purchases, total paid; split by owner type and by owner.',
+            inputs: 'Query: same filters as the list', curl: buildCurl('GET', '/api/admin/sales-referrals/data/summary'),
+            expected: '200 + totals (via_code + direct = accounts), by_owner_type[], by_owner[]', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { page: 1, limit: 10, sort: 'total_paid' };
+        const r = await request('GET', '/api/admin/sales-referrals/data/workspaces', { params });
+        const d = r.data?.data;
+        const first = d?.rows?.[0];
+        const pass = r.status === 200 && Array.isArray(d?.rows) && typeof d?.pagination?.total === 'number'
+            && (!first || Boolean(first.id && first.name && ['workspace', 'user'].includes(first.kind) && first.owner_type && first.attribution && first.current_plan && typeof first.purchases === 'number' && typeof first.total_paid === 'number' && typeof first.seats === 'number'));
+        addResult({
+            name: 'Referral Data Workspaces', group: 'Referral Data', method: 'GET', path: '/api/admin/sales-referrals/data/workspaces',
+            purpose: 'One row per account (workspace or solo user): sales owner, code, signup date, attribution (SIGNUP / ADMIN / DIRECT), current plan, purchases, total paid, last purchase, seats.',
+            inputs: 'Query: page, limit, sort, owner_id, code, type, status, include_direct, source, kind, q, from, to, include_history',
+            curl: buildCurl('GET', '/api/admin/sales-referrals/data/workspaces', {}, null, params),
+            expected: '200 + rows[] with owner / code / attribution / plan / purchases / seats', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+        if (pass && first) refAccountId = first.id;
+    }
+    {
+        const params = { include_direct: 'false', type: 'outsourced', limit: 100 };
+        const r = await request('GET', '/api/admin/sales-referrals/data/workspaces', { params });
+        const rows = r.data?.data?.rows || [];
+        const pass = r.status === 200 && rows.every(a => a.code && a.sales_owner && a.owner_type === 'OUTSOURCED') && r.data?.data?.filters?.include_direct === false;
+        addResult({
+            name: 'Referral Data Workspaces (type + no Direct)', group: 'Referral Data', method: 'GET', path: '/api/admin/sales-referrals/data/workspaces',
+            purpose: 'type=outsourced with include_direct=false returns only accounts attributed to an outsourced owner.',
+            inputs: 'Query: type=outsourced&include_direct=false', curl: buildCurl('GET', '/api/admin/sales-referrals/data/workspaces', {}, null, params),
+            expected: '200 + every row OUTSOURCED with a code', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    if (refAccountId) {
+        const r = await request('GET', `/api/admin/sales-referrals/data/workspaces/${refAccountId}`);
+        const d = r.data?.data;
+        const pass = r.status === 200 && d?.account?.id === refAccountId && Array.isArray(d?.seats) && Array.isArray(d?.events)
+            && d.events.length >= 1 && d.events[0].kind === 'trial' && d?.history && typeof d.history === 'object';
+        addResult({
+            name: 'Referral Data Account Detail', group: 'Referral Data', method: 'GET', path: `/api/admin/sales-referrals/data/workspaces/${refAccountId}`,
+            purpose: 'Expanded row: the account, its seats, the plan-history timeline (trial, purchase, upgrade, renewal, top-up, storage add-on, cancelled) and raw Payment-DB history per seat.',
+            inputs: 'Path: id (firm UUID or user id)', curl: buildCurl('GET', `/api/admin/sales-referrals/data/workspaces/${refAccountId}`),
+            expected: '200 + account, seats[], events[] (first = trial), history{}', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { page: 1, limit: 10 };
+        const r = await request('GET', '/api/admin/sales-referrals/data/purchases', { params });
+        const d = r.data?.data;
+        const pass = r.status === 200 && Array.isArray(d?.rows) && typeof d?.totals?.amount === 'number'
+            && d.rows.every(e => e.amount > 0 && e.account && e.at_ist?.display && e.kind);
+        addResult({
+            name: 'Referral Data Purchases', group: 'Referral Data', method: 'GET', path: '/api/admin/sales-referrals/data/purchases',
+            purpose: 'Plan purchases tab: one row per paid event across all accounts (date, workspace, owner, code, event, plan, billing, amount, payment id, status).',
+            inputs: 'Query: same filters + event (purchase, upgrade, renewal, topup, storage_addon)', curl: buildCurl('GET', '/api/admin/sales-referrals/data/purchases', {}, null, params),
+            expected: '200 + rows[] all with amount > 0, totals.amount', actual: r.status, pass,
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { type: 'bogus' };
+        const r = await request('GET', '/api/admin/sales-referrals/data/workspaces', { params });
+        addResult({
+            name: 'Referral Data (INVALID type — expect 400)', group: 'Referral Data', method: 'GET', path: '/api/admin/sales-referrals/data/workspaces',
+            purpose: 'type must be all, internal or outsourced.', inputs: 'Query: type=bogus', curl: buildCurl('GET', '/api/admin/sales-referrals/data/workspaces', {}, null, params),
+            expected: '400 VALIDATION_ERROR', actual: r.status, pass: r.status === 400 && r.data?.error?.code === 'VALIDATION_ERROR',
+            latency: r.latency, sample: truncate(r.data), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { export: 'workspaces', columns: 'workspace,owner,code,status,total_paid' };
+        const r = await request('GET', '/api/admin/sales-referrals/data/export', { params });
+        const body = typeof r.data === 'string' ? r.data : '';
+        const header = body.replace(/^﻿/, '').split('\r\n')[0];
+        const pass = r.status === 200 && header === 'Workspace / user,Sales owner,Code,Plan status,Total paid';
+        addResult({
+            name: 'Referral Data CSV (workspaces, chosen columns)', group: 'Referral Data', method: 'GET', path: '/api/admin/sales-referrals/data/export',
+            purpose: 'Export dialog: kind=workspaces with a column selection; the header must contain exactly the chosen columns in catalogue order.',
+            inputs: 'Query: export=workspaces&columns=…', curl: buildCurl('GET', '/api/admin/sales-referrals/data/export', {}, null, params),
+            expected: '200 text/csv, header = chosen columns', actual: r.status, pass,
+            latency: r.latency, sample: body.slice(0, 400), errorDetail: r.error,
+        });
+    }
+    {
+        const params = { export: 'history', scope: 'all' };
+        const r = await request('GET', '/api/admin/sales-referrals/data/export', { params });
+        const body = typeof r.data === 'string' ? r.data : '';
+        const pass = r.status === 200 && body.includes('Event kind') && body.includes(',trial,');
+        addResult({
+            name: 'Referral Data CSV (plan history, all data)', group: 'Referral Data', method: 'GET', path: '/api/admin/sales-referrals/data/export',
+            purpose: 'Export dialog: kind=history, scope=all (ignores filters): one row per plan event incl. trial starts.',
+            inputs: 'Query: export=history&scope=all', curl: buildCurl('GET', '/api/admin/sales-referrals/data/export', {}, null, params),
+            expected: '200 text/csv with Event kind column and trial rows', actual: r.status, pass,
+            latency: r.latency, sample: body.slice(0, 400), errorDetail: r.error,
+        });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
     // G) Authentication Negative Tests
     // ════════════════════════════════════════════════════════════════════════
     console.log('\n── G) Auth Negative Tests ──');
