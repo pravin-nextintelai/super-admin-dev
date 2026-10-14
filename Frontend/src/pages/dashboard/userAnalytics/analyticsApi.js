@@ -40,6 +40,22 @@ export const fetchMonthlySubscribers = (planId) => req(`${PBASE}/monthly/${planI
 export const fetchTopupBuyers = (planId) => req(`${PBASE}/topup/${planId}/buyers`);
 export const fetchAddonBuyers = (planId) => req(`${PBASE}/addon/${planId}/buyers`);
 
+export const fetchSubscriberInvoices = (userId) => req(`${PBASE}/subscribers/${userId}/invoices`);
+
+/** Download a plan payment's invoice or receipt PDF. doc: 'invoice' | 'receipt'. */
+export const downloadSubscriberDocument = async (userId, paymentId, doc) => {
+  const url = `${PBASE}/subscribers/${userId}/payments/${paymentId}/${doc}`;
+  const res = await fetch(url, { headers: getAuthHeaders() });
+  if (!res.ok) {
+    let body = {};
+    try { body = await res.json(); } catch { /* non-JSON */ }
+    throw new Error(body.message || body.error || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const match = /filename="?([^"]+)"?/i.exec(res.headers.get('content-disposition') || '');
+  return { blob, filename: match?.[1] || `${doc}-${paymentId}.pdf` };
+};
+
 export const fetchPlanSubscribers = (params = {}) => {
   const q = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {

@@ -9,6 +9,12 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 
+const missingDbVars = ['DATABASE_URL', 'DOCDB_URL'].filter((k) => !process.env[k]);
+if (missingDbVars.length) {
+  console.error(`❌ Fatal: ${missingDbVars.join(', ')} not set. Check Backend/.env`);
+  process.exit(1);
+}
+
 // --- Database & Models ---
 const pool = require('./config/db');           // Main DB
 const docPool = require('./config/docDB');     // Secret Manager DB

@@ -1,14 +1,14 @@
 /**
  * Sales Referrals → "All referral data" screen (workspaces, plan purchases, CSV).
  * Mounted at /api/admin/sales-referrals/data (before the main sales-referrals router).
- * Read-only. Roles: super-admin, admin.
+ * Read-only. Roles: super-admin, admin, finance-admin.
  */
 const express = require('express');
 const adminAuth = require('../middleware/adminAuth.middleware');
 const logger = require('../config/logger');
 const { makeControllers } = require('../controllers/referralDataController');
 
-const READ_ROLES = ['super-admin', 'admin'];
+const READ_ROLES = ['super-admin', 'admin', 'finance-admin'];
 
 function requireRoles(allowed) {
   return (req, res, next) => {

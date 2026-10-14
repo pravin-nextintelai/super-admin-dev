@@ -329,11 +329,13 @@ const clampPage = (v, def = 1) => {
 const clampPageSize = (v, def = 25) => {
     const n = parseInt(v, 10);
     if (!Number.isFinite(n) || n < 1) return def;
-    return Math.min(n, 50);
+    return Math.min(n, 100);
 };
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const EXPORT_LIMIT = 10000;
+
+const PLAN_TIERS = ['free', 'pro', 'plus', 'lite', 'enterprise'];
 
 function parseSubscriberQuery(query) {
     const page = clampPage(query.page);
@@ -342,6 +344,11 @@ function parseSubscriberQuery(query) {
     const topupPlanIdRaw = parseInt(query.topupPlanId, 10);
     const addonPlanIdRaw = parseInt(query.addonPlanId, 10);
     const day = DAY_RE.test(String(query.day || '').trim()) ? String(query.day).trim() : null;
+    const planRaw = String(query.plan || '').trim().toLowerCase();
+    const dateParam = (v) => (DAY_RE.test(String(v || '').trim()) ? String(v).trim() : null);
+    let from = dateParam(query.from);
+    let to = dateParam(query.to);
+    if (from && to && from > to) [from, to] = [to, from];
     return {
         page,
         pageSize,
@@ -354,129 +361,49 @@ function parseSubscriberQuery(query) {
         status: /^[a-z0-9_]{1,32}$/.test(String(query.status || '').trim().toLowerCase())
             ? String(query.status).trim().toLowerCase()
             : null,
+        plan: PLAN_TIERS.includes(planRaw) ? planRaw : null,
+        from,
+        to,
     };
 }
 
-function buildSubscriberWhere(filters) {
-    const where = [];
-    const params = [];
-    const add = (clause, value) => {
-        params.push(value);
-        where.push(clause.replace('$?', `$${params.length}`));
-    };
-    if (filters.planId != null) add('us.monthly_plan_id = $?', filters.planId);
-    if (filters.topupPlanId != null) {
-        add(
-            `EXISTS (
-                SELECT 1 FROM user_token_topup_purchases up
-                WHERE up.user_id = bu.user_id AND up.topup_plan_id = $?
-            )`,
-            filters.topupPlanId
-        );
-    }
-    if (filters.addonPlanId != null) {
-        add(
-            `EXISTS (
-                SELECT 1 FROM user_storage_addon_purchases ap
-                WHERE ap.user_id = bu.user_id AND ap.addon_plan_id = $?
-            )`,
-            filters.addonPlanId
-        );
-    }
-    if (filters.status === 'pack_only') where.push('us.user_id IS NULL');
-    else if (filters.status) add('LOWER(COALESCE(us.status, \'\')) = $?', filters.status);
-    if (filters.searchIds) add('bu.user_id = ANY($?::int[])', filters.searchIds);
-    const joinedIst = `(${JOINED_AT_SQL} AT TIME ZONE 'Asia/Kolkata')`;
-    if (filters.day) add(`${joinedIst}::date = $?::date`, filters.day);
-    else if (filters.month) add(`to_char(${joinedIst}, 'YYYY-MM') = $?`, filters.month);
-    return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+const PAID_IN = `'captured','paid','success','succeeded','completed'`;
+const PAID_FILTER = `LOWER(COALESCE(p.status, '')) IN (${PAID_IN})`;
+
+function canonicalPlanKey(name) {
+    const n = String(name || '').trim().toLowerCase();
+    if (!n || n === 'free' || n === 'free trial' || n === 'trial' || n.startsWith('free ')) return 'free';
+    if (n === 'plus' || n.startsWith('plus ') || n.startsWith('plus-')) return 'plus';
+    if (n === 'pro' || n.startsWith('pro ') || n.startsWith('pro-')) return 'pro';
+    if (n === 'lite' || n.startsWith('lite ') || n.startsWith('lite-')) return 'lite';
+    if (n === 'enterprise' || n.startsWith('enterprise ') || n.startsWith('enterprise-')) return 'enterprise';
+    return n || 'free';
 }
 
-async function resolveSearchIds(authPool, search, limit = 500) {
-    if (!search) return { searchIds: null, empty: false };
-    const { rows } = await authPool.query(
-        `SELECT id FROM users
-         WHERE username ILIKE $1 OR email ILIKE $1
-         LIMIT $2`,
-        [`%${search}%`, limit]
-    );
-    const searchIds = rows.map((r) => r.id);
-    return { searchIds, empty: searchIds.length === 0 };
+function tierSql(expr, tier) {
+    if (tier === 'free') {
+        return `(${expr} = '' OR ${expr} = 'free' OR ${expr} = 'free trial' OR ${expr} = 'trial' OR ${expr} LIKE 'free %')`;
+    }
+    if (tier === 'pro') return `(${expr} = 'pro' OR ${expr} LIKE 'pro %' OR ${expr} LIKE 'pro-%')`;
+    if (tier === 'plus') return `(${expr} = 'plus' OR ${expr} LIKE 'plus %' OR ${expr} LIKE 'plus-%')`;
+    if (tier === 'lite') return `(${expr} = 'lite' OR ${expr} LIKE 'lite %' OR ${expr} LIKE 'lite-%')`;
+    if (tier === 'enterprise') return `(${expr} = 'enterprise' OR ${expr} LIKE 'enterprise %' OR ${expr} LIKE 'enterprise-%')`;
+    return null;
 }
 
-const PAID_STATUSES = `'captured','paid','success','succeeded','completed'`;
+function joinIds(values) {
+    return [...new Set((values || []).map((v) => Number(v)).filter((n) => Number.isFinite(n)))];
+}
 
-/** First activity: monthly join if present, otherwise earliest pack purchase. */
-const JOINED_AT_SQL = `COALESCE(
-  us.created_at,
-  us.start_date,
-  (SELECT MIN(up.created_at) FROM user_token_topup_purchases up WHERE up.user_id = bu.user_id),
-  (SELECT MIN(ua.created_at) FROM user_storage_addon_purchases ua WHERE ua.user_id = bu.user_id)
-)`;
-
-/** One row per buyer: monthly subscribers ∪ top-up buyers ∪ add-on buyers. */
-const SUBSCRIBER_FROM = `FROM (
-  SELECT user_id FROM user_subscriptions
-  UNION
-  SELECT user_id FROM user_token_topup_purchases
-  UNION
-  SELECT user_id FROM user_storage_addon_purchases
-) bu
-LEFT JOIN LATERAL (
-  SELECT *
-  FROM user_subscriptions s
-  WHERE s.user_id = bu.user_id
-  ORDER BY
-    CASE WHEN LOWER(COALESCE(s.status, '')) IN ('active', 'topup_only') THEN 0 ELSE 1 END,
-    COALESCE(s.created_at, s.start_date) DESC NULLS LAST
-  LIMIT 1
-) us ON true
-LEFT JOIN monthly_plans mp ON mp.id = us.monthly_plan_id`;
-
-const SUBSCRIBER_SELECT = `SELECT bu.user_id,
-                    COALESCE(us.status, 'pack_only') AS status,
-                    us.start_date,
-                    us.end_date,
-                    us.created_at,
-                    ${JOINED_AT_SQL} AS joined_at,
-                    COALESCE(us.current_token_balance, 0)::bigint AS current_token_balance,
-                    COALESCE(us.topup_token_balance, 0)::bigint AS topup_token_balance,
-                    mp.id AS plan_id,
-                    mp.name AS plan_name,
-                    mp.category AS plan_category,
-                    mp.price AS plan_price,
-                    mp.currency AS plan_currency,
-                    (SELECT string_agg(DISTINCT tp.name, ', ' ORDER BY tp.name)
-                     FROM user_token_topup_purchases up
-                     JOIN topup_plans tp ON tp.id = up.topup_plan_id
-                     WHERE up.user_id = bu.user_id) AS topup_plan_names,
-                    (SELECT string_agg(DISTINCT ap.name, ', ' ORDER BY ap.name)
-                     FROM user_storage_addon_purchases ua
-                     JOIN addon_plans ap ON ap.id = ua.addon_plan_id
-                     WHERE ua.user_id = bu.user_id) AS addon_plan_names,
-                    (
-                      COALESCE((
-                        SELECT SUM(p.amount) FILTER (WHERE LOWER(COALESCE(p.status, '')) IN (${PAID_STATUSES}))
-                        FROM payments p WHERE p.user_id = bu.user_id
-                      ), 0)
-                      + COALESCE((
-                        SELECT SUM(up.amount) FILTER (WHERE LOWER(COALESCE(up.status, '')) IN (${PAID_STATUSES}))
-                        FROM user_token_topup_purchases up WHERE up.user_id = bu.user_id
-                      ), 0)
-                      + COALESCE((
-                        SELECT SUM(ua.amount) FILTER (WHERE LOWER(COALESCE(ua.status, '')) IN (${PAID_STATUSES}))
-                        FROM user_storage_addon_purchases ua WHERE ua.user_id = bu.user_id
-                      ), 0)
-                    )::numeric AS paid_total,
-                    GREATEST(
-                      (SELECT MAX(p.created_at) FROM payments p
-                       WHERE p.user_id = bu.user_id AND LOWER(COALESCE(p.status, '')) IN (${PAID_STATUSES})),
-                      (SELECT MAX(up.created_at) FROM user_token_topup_purchases up
-                       WHERE up.user_id = bu.user_id AND LOWER(COALESCE(up.status, '')) IN (${PAID_STATUSES})),
-                      (SELECT MAX(ua.created_at) FROM user_storage_addon_purchases ua
-                       WHERE ua.user_id = bu.user_id AND LOWER(COALESCE(ua.status, '')) IN (${PAID_STATUSES}))
-                    ) AS last_paid_at
-             ${SUBSCRIBER_FROM}`;
+function intersectIds(lists) {
+    if (!lists.length) return [];
+    let set = new Set(lists[0]);
+    for (let i = 1; i < lists.length; i += 1) {
+        const next = new Set(lists[i]);
+        set = new Set([...set].filter((id) => next.has(id)));
+    }
+    return [...set];
+}
 
 function csvCell(value) {
     if (value == null || value === '') return '';
@@ -505,36 +432,359 @@ function toExcelDate(value) {
     return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
+/** Same columns as the Users & Plans table: user, plan, amount paid, purchase date, invoice, receipt. */
 function subscribersToCsv(rows) {
-    const header = [
-        'User ID', 'Username', 'Email', 'Blocked', 'Plan', 'Plan category',
-        'Status', 'Joined at', 'Top-up packs', 'Add-ons', 'Paid total', 'Last paid at',
-        'Plan balance', 'Top-up balance',
-    ];
+    const header = ['Username', 'Email', 'Plan', 'Amount paid (INR)', 'Purchase date', 'Invoice', 'Receipt'];
     const lines = [header.map(csvCell).join(',')];
     rows.forEach((r) => {
+        const paymentId = r.latest_invoice_id;
         lines.push([
-            r.user_id,
-            r.username,
+            r.username || `User #${r.user_id}`,
             r.email,
-            r.is_blocked ? 'yes' : 'no',
-            r.plan_name,
-            r.plan_category,
-            r.status,
-            toExcelDate(r.joined_at || r.created_at || r.start_date),
-            r.topup_plan_names,
-            r.addon_plan_names,
-            r.paid_total,
-            toExcelDate(r.last_paid_at),
-            r.current_token_balance,
-            r.topup_token_balance,
+            r.plan_name || 'Free',
+            paymentId ? num(r.latest_invoice_amount) : 0,
+            paymentId ? toExcelDate(r.latest_invoice_at).slice(0, 10) : '',
+            paymentId ? `INV-${paymentId}` : '',
+            paymentId ? (r.latest_receipt || `RCPT-${paymentId}`) : '',
         ].map(csvCell).join(','));
     });
     return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
 
-async function loadSubscriberFacets(paymentPool) {
-    const [plans, topupPlans, addonRes, statusRes] = await Promise.all([
+async function queryIds(paymentPool, sql, params = []) {
+    const { rows } = await paymentPool.query(sql, params);
+    return joinIds(rows.map((r) => r.user_id));
+}
+
+async function loadCurrentBillingPlans(paymentPool) {
+    const sql = (legacy) => `
+        SELECT DISTINCT ON (us.user_id)
+               us.user_id,
+               TRIM(COALESCE(mp.name${legacy ? ', sp.name' : ''}, '')) AS plan_name
+        FROM user_subscriptions us
+        LEFT JOIN monthly_plans mp ON mp.id = us.monthly_plan_id
+        ${legacy ? 'LEFT JOIN subscription_plans sp ON sp.id = us.plan_id' : ''}
+        ORDER BY us.user_id,
+                 CASE WHEN LOWER(COALESCE(us.status, '')) IN ('active', 'topup_only') THEN 0 ELSE 1 END,
+                 COALESCE(us.created_at, us.start_date) DESC NULLS LAST`;
+    try {
+        const { rows } = await paymentPool.query(sql(true));
+        return rows;
+    } catch (e) {
+        const { rows } = await paymentPool.query(sql(false));
+        return rows;
+    }
+}
+
+async function billingFilterIds(paymentPool, plan) {
+    if (!plan) return { tierBillingIds: [], nonFreeBillingIds: [] };
+    const rows = await loadCurrentBillingPlans(paymentPool);
+    const tierBillingIds = [];
+    const nonFreeBillingIds = [];
+    rows.forEach((r) => {
+        const key = canonicalPlanKey(r.plan_name);
+        const id = Number(r.user_id);
+        if (!Number.isFinite(id)) return;
+        if (key !== 'free') nonFreeBillingIds.push(id);
+        if (key === plan) tierBillingIds.push(id);
+    });
+    return { tierBillingIds: joinIds(tierBillingIds), nonFreeBillingIds: joinIds(nonFreeBillingIds) };
+}
+
+async function constraintUserIds(paymentPool, filters) {
+    const lists = [];
+    if (filters.from || filters.to) {
+        // Purchase date = latest paid plan payment (IST), same as the table's "Purchase date" column.
+        lists.push(await queryIds(
+            paymentPool,
+            `SELECT user_id FROM (
+                SELECT p.user_id, (MAX(p.created_at) AT TIME ZONE 'Asia/Kolkata')::date AS purchased_on
+                FROM payments p
+                WHERE ${PAID_FILTER}
+                GROUP BY p.user_id
+             ) s
+             WHERE ($1::date IS NULL OR s.purchased_on >= $1::date)
+               AND ($2::date IS NULL OR s.purchased_on <= $2::date)`,
+            [filters.from, filters.to]
+        ));
+    }
+    if (filters.planId != null) {
+        lists.push(await queryIds(
+            paymentPool,
+            `SELECT DISTINCT user_id FROM user_subscriptions WHERE monthly_plan_id = $1`,
+            [filters.planId]
+        ));
+    }
+    if (filters.topupPlanId != null) {
+        lists.push(await queryIds(
+            paymentPool,
+            `SELECT DISTINCT user_id FROM user_token_topup_purchases WHERE topup_plan_id = $1`,
+            [filters.topupPlanId]
+        ));
+    }
+    if (filters.addonPlanId != null) {
+        try {
+            lists.push(await queryIds(
+                paymentPool,
+                `SELECT DISTINCT user_id FROM user_storage_addon_purchases WHERE addon_plan_id = $1`,
+                [filters.addonPlanId]
+            ));
+        } catch {
+            lists.push([]);
+        }
+    }
+    if (filters.status === 'pack_only') {
+        let packed = [];
+        try {
+            packed = await queryIds(paymentPool, `
+                SELECT user_id FROM user_token_topup_purchases
+                UNION
+                SELECT user_id FROM user_storage_addon_purchases`);
+        } catch {
+            packed = await queryIds(paymentPool, `SELECT user_id FROM user_token_topup_purchases`);
+        }
+        const subscribed = await queryIds(paymentPool, `SELECT DISTINCT user_id FROM user_subscriptions`);
+        const sub = new Set(subscribed);
+        lists.push(packed.filter((id) => !sub.has(id)));
+    } else if (filters.status && filters.status !== 'free') {
+        lists.push(await queryIds(
+            paymentPool,
+            `SELECT user_id FROM (
+                SELECT DISTINCT ON (us.user_id) us.user_id, LOWER(COALESCE(us.status, '')) AS status
+                FROM user_subscriptions us
+                ORDER BY us.user_id,
+                         CASE WHEN LOWER(COALESCE(us.status, '')) IN ('active', 'topup_only') THEN 0 ELSE 1 END,
+                         COALESCE(us.created_at, us.start_date) DESC NULLS LAST
+             ) s WHERE s.status = $1`,
+            [filters.status]
+        ));
+    }
+    if (!lists.length) return null;
+    return intersectIds(lists.map(joinIds));
+}
+
+function buildUserWhere(filters, extra) {
+    const where = [];
+    const params = [];
+    const add = (clause, value) => {
+        params.push(value);
+        where.push(clause.replace('$?', `$${params.length}`));
+    };
+    const planExpr = `LOWER(TRIM(COALESCE(u.active_plan_name, '')))`;
+    if (filters.search) {
+        params.push(`%${filters.search}%`);
+        const like = params.length;
+        params.push(filters.search);
+        const exact = params.length;
+        where.push(`(u.username ILIKE $${like} OR u.email ILIKE $${like} OR u.id::text = $${exact})`);
+    }
+    if (filters.plan === 'free') {
+        where.push(tierSql(planExpr, 'free'));
+        if (extra.nonFreeBillingIds.length) {
+            params.push(extra.nonFreeBillingIds);
+            where.push(`NOT (u.id = ANY($${params.length}::int[]))`);
+        }
+    } else if (filters.plan) {
+        const parts = [tierSql(planExpr, filters.plan)];
+        if (extra.tierBillingIds.length) {
+            params.push(extra.tierBillingIds);
+            parts.push(`(TRIM(COALESCE(u.active_plan_name, '')) = '' AND u.id = ANY($${params.length}::int[]))`);
+        }
+        where.push(`(${parts.join(' OR ')})`);
+    }
+    if (extra.constraintIds) {
+        params.push(extra.constraintIds);
+        where.push(`u.id = ANY($${params.length}::int[])`);
+    }
+    const joined = `(u.created_at AT TIME ZONE 'Asia/Kolkata')`;
+    if (filters.day) add(`${joined}::date = $?::date`, filters.day);
+    else if (filters.month) add(`to_char(${joined}, 'YYYY-MM') = $?`, filters.month);
+    return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+async function queryCurrentSubs(paymentPool, ids) {
+    const sql = (legacy) => `
+        SELECT DISTINCT ON (us.user_id)
+               us.user_id,
+               COALESCE(NULLIF(TRIM(us.status), ''), 'active') AS status,
+               COALESCE(us.current_token_balance, 0)::bigint AS current_token_balance,
+               COALESCE(us.topup_token_balance, 0)::bigint AS topup_token_balance,
+               TRIM(COALESCE(mp.name${legacy ? ', sp.name' : ''}, '')) AS billing_plan_name
+        FROM user_subscriptions us
+        LEFT JOIN monthly_plans mp ON mp.id = us.monthly_plan_id
+        ${legacy ? 'LEFT JOIN subscription_plans sp ON sp.id = us.plan_id' : ''}
+        WHERE us.user_id = ANY($1::int[])
+        ORDER BY us.user_id,
+                 CASE WHEN LOWER(COALESCE(us.status, '')) IN ('active', 'topup_only') THEN 0 ELSE 1 END,
+                 COALESCE(us.created_at, us.start_date) DESC NULLS LAST`;
+    try {
+        return await paymentPool.query(sql(true), [ids]);
+    } catch {
+        return paymentPool.query(sql(false), [ids]);
+    }
+}
+
+async function queryPlanInvoices(paymentPool, ids) {
+    return paymentPool.query(
+        `SELECT p.user_id,
+                COUNT(*) FILTER (WHERE ${PAID_FILTER})::int AS invoice_count,
+                COALESCE(SUM(p.amount) FILTER (WHERE ${PAID_FILTER}), 0)::numeric AS paid_total,
+                MAX(p.created_at) FILTER (WHERE ${PAID_FILTER}) AS last_paid_at,
+                (array_agg(p.id::text ORDER BY p.created_at DESC NULLS LAST) FILTER (WHERE ${PAID_FILTER}))[1:40] AS invoice_ids,
+                (array_agg(p.razorpay_payment_id ORDER BY p.created_at DESC NULLS LAST)
+                    FILTER (WHERE ${PAID_FILTER} AND COALESCE(p.razorpay_payment_id, '') <> ''))[1:40] AS receipt_ids,
+                (array_agg(p.razorpay_order_id ORDER BY p.created_at DESC NULLS LAST)
+                    FILTER (WHERE ${PAID_FILTER} AND COALESCE(p.razorpay_order_id, '') <> ''))[1:40] AS order_ids,
+                (array_agg(p.amount ORDER BY p.created_at DESC NULLS LAST) FILTER (WHERE ${PAID_FILTER}))[1] AS latest_invoice_amount
+         FROM payments p
+         WHERE p.user_id = ANY($1::int[])
+         GROUP BY p.user_id`,
+        [ids]
+    );
+}
+
+async function queryPackNames(paymentPool, ids) {
+    const [topups, addons] = await Promise.all([
+        paymentPool.query(
+            `SELECT up.user_id, string_agg(DISTINCT tp.name, ', ' ORDER BY tp.name) AS names
+             FROM user_token_topup_purchases up
+             JOIN topup_plans tp ON tp.id = up.topup_plan_id
+             WHERE up.user_id = ANY($1::int[])
+             GROUP BY up.user_id`,
+            [ids]
+        ).catch(() => ({ rows: [] })),
+        paymentPool.query(
+            `SELECT ua.user_id, string_agg(DISTINCT ap.name, ', ' ORDER BY ap.name) AS names
+             FROM user_storage_addon_purchases ua
+             JOIN addon_plans ap ON ap.id = ua.addon_plan_id
+             WHERE ua.user_id = ANY($1::int[])
+             GROUP BY ua.user_id`,
+            [ids]
+        ).catch(() => ({ rows: [] })),
+    ]);
+    return { topups: topups.rows, addons: addons.rows };
+}
+
+async function queryPackPaid(paymentPool, ids) {
+    const paid = `LOWER(COALESCE(status, '')) IN (${PAID_IN})`;
+    const [topups, addons] = await Promise.all([
+        paymentPool.query(
+            `SELECT user_id,
+                    COALESCE(SUM(amount) FILTER (WHERE ${paid}), 0)::numeric AS paid_total,
+                    MAX(created_at) FILTER (WHERE ${paid}) AS last_paid_at
+             FROM user_token_topup_purchases
+             WHERE user_id = ANY($1::int[])
+             GROUP BY user_id`,
+            [ids]
+        ).catch(() => ({ rows: [] })),
+        paymentPool.query(
+            `SELECT user_id,
+                    COALESCE(SUM(amount) FILTER (WHERE ${paid}), 0)::numeric AS paid_total,
+                    MAX(created_at) FILTER (WHERE ${paid}) AS last_paid_at
+             FROM user_storage_addon_purchases
+             WHERE user_id = ANY($1::int[])
+             GROUP BY user_id`,
+            [ids]
+        ).catch(() => ({ rows: [] })),
+    ]);
+    return { topups: topups.rows, addons: addons.rows };
+}
+
+function laterDate(a, b) {
+    if (!a) return b || null;
+    if (!b) return a;
+    return new Date(a) >= new Date(b) ? a : b;
+}
+
+async function attachBilling(userRows, paymentPool) {
+    const ids = joinIds(userRows.map((u) => u.id));
+    const subs = new Map();
+    const invoices = new Map();
+    const topupNames = new Map();
+    const addonNames = new Map();
+    const topupPaid = new Map();
+    const addonPaid = new Map();
+    if (ids.length) {
+        const [subRes, invoiceRes, names, packs] = await Promise.all([
+            queryCurrentSubs(paymentPool, ids),
+            queryPlanInvoices(paymentPool, ids).catch((e) => {
+                logger.errorWithContext('Plan analytics invoice summary failed', e, {
+                    layer: 'PLAN_ANALYTICS',
+                    summary: { userCount: ids.length },
+                });
+                return { rows: [] };
+            }),
+            queryPackNames(paymentPool, ids),
+            queryPackPaid(paymentPool, ids),
+        ]);
+        subRes.rows.forEach((r) => subs.set(Number(r.user_id), r));
+        invoiceRes.rows.forEach((r) => invoices.set(Number(r.user_id), r));
+        names.topups.forEach((r) => topupNames.set(Number(r.user_id), r.names));
+        names.addons.forEach((r) => addonNames.set(Number(r.user_id), r.names));
+        packs.topups.forEach((r) => topupPaid.set(Number(r.user_id), r));
+        packs.addons.forEach((r) => addonPaid.set(Number(r.user_id), r));
+    }
+    return userRows.map((u) => {
+        const id = Number(u.id);
+        const sub = subs.get(id);
+        const inv = invoices.get(id);
+        const top = topupPaid.get(id);
+        const add = addonPaid.get(id);
+        const active = String(u.active_plan_name || '').trim();
+        const billingName = String(sub?.billing_plan_name || '').trim();
+        const planName = active || billingName || 'Free';
+        const planKey = canonicalPlanKey(planName);
+        const receiptIds = Array.isArray(inv?.receipt_ids) ? inv.receipt_ids.filter(Boolean) : [];
+        const invoiceIds = Array.isArray(inv?.invoice_ids) ? inv.invoice_ids.filter(Boolean) : [];
+        const paidTotal = num(inv?.paid_total) + num(top?.paid_total) + num(add?.paid_total);
+        return {
+            user_id: u.id,
+            username: u.username || null,
+            email: u.email || null,
+            is_blocked: Boolean(u.is_blocked),
+            plan_name: planKey === 'free' && !active && !billingName ? 'Free' : planName,
+            plan_key: planKey,
+            plan_category: planKey,
+            status: sub?.status || (planKey === 'free' ? 'free' : 'active'),
+            joined_at: u.created_at,
+            created_at: u.created_at,
+            invoice_count: num(inv?.invoice_count),
+            invoice_ids: invoiceIds,
+            receipt_ids: receiptIds,
+            order_ids: Array.isArray(inv?.order_ids) ? inv.order_ids.filter(Boolean) : [],
+            latest_invoice_id: invoiceIds[0] || null,
+            latest_invoice_amount: inv?.latest_invoice_amount != null ? num(inv.latest_invoice_amount) : null,
+            latest_receipt: receiptIds[0] || null,
+            paid_total: paidTotal,
+            last_paid_at: laterDate(laterDate(inv?.last_paid_at, top?.last_paid_at), add?.last_paid_at),
+            latest_invoice_at: inv?.last_paid_at || null,
+            current_token_balance: num(sub?.current_token_balance),
+            topup_token_balance: num(sub?.topup_token_balance),
+            topup_plan_names: topupNames.get(id) || null,
+            addon_plan_names: addonNames.get(id) || null,
+        };
+    });
+}
+
+async function loadPlanTierCounts(authPool) {
+    const { rows } = await authPool.query(
+        `SELECT LOWER(TRIM(COALESCE(active_plan_name, ''))) AS name, COUNT(*)::int AS count
+         FROM users
+         GROUP BY 1`
+    );
+    const counts = { all: 0, free: 0, pro: 0, plus: 0, lite: 0, enterprise: 0, other: 0 };
+    rows.forEach((r) => {
+        const n = num(r.count);
+        const key = canonicalPlanKey(r.name);
+        counts.all += n;
+        if (PLAN_TIERS.includes(key)) counts[key] += n;
+        else counts.other += n;
+    });
+    return counts;
+}
+
+async function loadSubscriberFacets(authPool, paymentPool) {
+    const [plans, topupPlans, addonRes, statusRes, tierCounts] = await Promise.all([
         paymentPool.query(`SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`),
         paymentPool.query(`SELECT id, name FROM topup_plans ORDER BY sort_order ASC, id ASC`),
         paymentPool.query(`SELECT id, name FROM addon_plans ORDER BY sort_order ASC, id ASC`).catch(() => ({ rows: [] })),
@@ -544,62 +794,108 @@ async function loadSubscriberFacets(paymentPool) {
              WHERE COALESCE(status, '') <> ''
              ORDER BY 1`
         ).catch(() => ({ rows: [{ status: 'active' }, { status: 'topup_only' }] })),
+        loadPlanTierCounts(authPool),
     ]);
-    const known = ['active', 'topup_only', 'pack_only', 'cancelled', 'expired', 'inactive'];
+    const known = ['active', 'free', 'topup_only', 'pack_only', 'cancelled', 'expired', 'inactive'];
     const fromDb = statusRes.rows.map((r) => r.status).filter(Boolean);
     const statuses = [...new Set([...known, ...fromDb])];
-    return { plans: plans.rows, topupPlans: topupPlans.rows, addonPlans: addonRes.rows, statuses };
+    const tiers = PLAN_TIERS.map((key) => ({
+        key,
+        label: key.charAt(0).toUpperCase() + key.slice(1),
+        count: tierCounts[key] || 0,
+    }));
+    return {
+        plans: plans.rows,
+        topupPlans: topupPlans.rows,
+        addonPlans: addonRes.rows,
+        statuses,
+        tiers,
+        tierCounts,
+    };
+}
+
+async function queryUsers(authPool, filters, extra, limit, offset) {
+    const { whereSql, params } = buildUserWhere(filters, extra);
+    const countRes = await authPool.query(
+        `SELECT COUNT(*)::int AS total FROM users u ${whereSql}`,
+        params
+    );
+    const listParams = offset == null ? [...params, limit] : [...params, limit, offset];
+    const limitSql = offset == null
+        ? `LIMIT $${params.length + 1}`
+        : `LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    const { rows } = await authPool.query(
+        `SELECT u.id, u.username, u.email, u.is_blocked, u.active_plan_name, u.created_at
+         FROM users u
+         ${whereSql}
+         ORDER BY u.created_at DESC NULLS LAST, u.id DESC
+         ${limitSql}`,
+        listParams
+    );
+    return { total: countRes.rows[0]?.total || 0, rows };
+}
+
+function mapInvoiceRow(row, kind) {
+    return {
+        id: `${kind}-${row.id}`,
+        kind,
+        plan_name: row.plan_name || (kind === 'topup' ? 'Top-up' : kind === 'addon' ? 'Add-on' : 'Plan'),
+        amount: num(row.amount),
+        currency: row.currency || 'INR',
+        status: row.status || null,
+        payment_method: row.payment_method || (kind === 'plan' ? null : 'Razorpay'),
+        invoice_id: row.id != null ? String(row.id) : null,
+        receipt: row.razorpay_payment_id || null,
+        order_id: row.razorpay_order_id || null,
+        created_at: row.created_at || row.transaction_date || null,
+    };
 }
 
 /**
- * GET /subscribers — paginated list of plan buyers (monthly ∪ top-up ∪ add-on).
- * Query: page, pageSize, planId, topupPlanId, addonPlanId, month (YYYY-MM), day (YYYY-MM-DD), search, status.
- * Day overrides month. Search matches Auth DB username/email then filters Payment rows.
+ * GET /subscribers — every auth user, with current plan plus plan invoices and receipts.
+ * Query: page, pageSize, plan (free|pro|plus|lite|enterprise), planId, topupPlanId, addonPlanId,
+ * month (YYYY-MM), day (YYYY-MM-DD), search, status.
  */
 exports.getSubscribers = async (req, res, pools) => {
     const filters = parseSubscriberQuery(req.query);
-    const { page, pageSize, planId, topupPlanId, addonPlanId, day, month, search, status } = filters;
+    if (!filters.plan && filters.status === 'free') filters.plan = 'free';
+    const { page, pageSize, planId, topupPlanId, addonPlanId, day, month, search, status, plan } = filters;
     const offset = (page - 1) * pageSize;
 
     try {
-        const found = await resolveSearchIds(pools.authPool, search);
-        if (found.empty) {
-            const facets = await loadSubscriberFacets(pools.paymentPool);
+        const [billingIds, constraintIds] = await Promise.all([
+            billingFilterIds(pools.paymentPool, plan),
+            constraintUserIds(pools.paymentPool, filters),
+        ]);
+        const facetsPromise = loadSubscriberFacets(pools.authPool, pools.paymentPool);
+        if (constraintIds && constraintIds.length === 0) {
+            const facets = await facetsPromise;
             logPortalFlow(req, 'Plan analytics subscribers list loaded', {
                 layer: 'PLAN_ANALYTICS',
-                summary: { page, pageSize, planId, topupPlanId, addonPlanId, month, day, search, status, total: 0, rowCount: 0 },
+                summary: { page, pageSize, plan, planId, topupPlanId, addonPlanId, month, day, search, status, total: 0, rowCount: 0 },
             });
             return res.status(200).json({
                 success: true,
                 data: { rows: [], total: 0, page, pageSize, filters: facets },
             });
         }
-
-        const { whereSql, params } = buildSubscriberWhere({ ...filters, searchIds: found.searchIds });
-        const countRes = await pools.paymentPool.query(
-            `SELECT COUNT(*)::int AS total ${SUBSCRIBER_FROM} ${whereSql}`,
-            params
+        const { total, rows } = await queryUsers(
+            pools.authPool,
+            filters,
+            { ...billingIds, constraintIds },
+            pageSize,
+            offset
         );
-        const total = countRes.rows[0]?.total || 0;
-        const listParams = [...params, pageSize, offset];
-        const { rows } = await pools.paymentPool.query(
-            `${SUBSCRIBER_SELECT}
-             ${whereSql}
-             ORDER BY ${JOINED_AT_SQL} DESC NULLS LAST, bu.user_id DESC
-             LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-            listParams
-        );
-
-        const enriched = await attachUsers(rows, pools.authPool);
-        const facets = await loadSubscriberFacets(pools.paymentPool);
+        const enriched = await attachBilling(rows, pools.paymentPool);
+        const facets = await facetsPromise;
         logPortalFlow(req, 'Plan analytics subscribers list loaded', {
             layer: 'PLAN_ANALYTICS',
             summary: {
-                page, pageSize, planId, topupPlanId, addonPlanId, month, day,
+                page, pageSize, plan, planId, topupPlanId, addonPlanId, month, day,
                 search: search || null, status, total, rowCount: enriched.length,
             },
             table: enriched.slice(0, 8).map((r) => ({
-                user_id: r.user_id, email: r.email, plan_name: r.plan_name, status: r.status,
+                user_id: r.user_id, email: r.email, plan_name: r.plan_name, status: r.status, invoice_count: r.invoice_count,
             })),
         });
         return res.status(200).json({
@@ -610,47 +906,43 @@ exports.getSubscribers = async (req, res, pools) => {
         logger.errorWithContext('Plan analytics subscribers list failed', e, {
             requestId: req.requestId,
             layer: 'PLAN_ANALYTICS',
-            summary: { page, pageSize, planId, topupPlanId, addonPlanId, month, day, search: search || null, status },
+            summary: { page, pageSize, plan, planId, topupPlanId, addonPlanId, month, day, search: search || null, status },
         });
         return res.status(500).json({ success: false, message: e.message });
     }
 };
 
-/** GET /subscribers/export — CSV of all matching rows (same filters as the list, no page cap besides EXPORT_LIMIT). */
+/** GET /subscribers/export — CSV of matching users (Free, Pro, Plus, Lite, Enterprise, or the active filters). */
 exports.exportSubscribers = async (req, res, pools) => {
     const filters = parseSubscriberQuery(req.query);
-    const { planId, topupPlanId, addonPlanId, day, month, search, status } = filters;
-    const filtered = Boolean(search || planId || topupPlanId || addonPlanId || month || day || status);
+    if (!filters.plan && filters.status === 'free') filters.plan = 'free';
+    const { planId, topupPlanId, addonPlanId, day, month, search, status, plan, from, to } = filters;
+    const filtered = Boolean(search || plan || planId || topupPlanId || addonPlanId || month || day || status || from || to);
 
     try {
-        const found = await resolveSearchIds(pools.authPool, search, 5000);
-        if (found.empty) {
-            const csv = subscribersToCsv([]);
-            logPortalFlow(req, 'Plan analytics subscribers CSV exported', {
-                layer: 'PLAN_ANALYTICS',
-                summary: { planId, topupPlanId, addonPlanId, month, day, search, status, filtered, rowCount: 0 },
-            });
-            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="users-plans-${filtered ? 'filtered-' : ''}${new Date().toISOString().slice(0, 10)}.csv"`);
-            return res.status(200).send(csv);
+        const [billingIds, constraintIds] = await Promise.all([
+            billingFilterIds(pools.paymentPool, plan),
+            constraintUserIds(pools.paymentPool, filters),
+        ]);
+        let enriched = [];
+        if (!(constraintIds && constraintIds.length === 0)) {
+            const { rows } = await queryUsers(
+                pools.authPool,
+                filters,
+                { ...billingIds, constraintIds },
+                EXPORT_LIMIT,
+                null
+            );
+            enriched = await attachBilling(rows, pools.paymentPool);
         }
-
-        const { whereSql, params } = buildSubscriberWhere({ ...filters, searchIds: found.searchIds });
-        const { rows } = await pools.paymentPool.query(
-            `${SUBSCRIBER_SELECT}
-             ${whereSql}
-             ORDER BY ${JOINED_AT_SQL} DESC NULLS LAST, bu.user_id DESC
-             LIMIT ${EXPORT_LIMIT}`,
-            params
-        );
-        const enriched = await attachUsers(rows, pools.authPool);
         const csv = subscribersToCsv(enriched);
         const stamp = new Date().toISOString().slice(0, 10);
-        const filename = `users-plans-${filtered ? 'filtered-' : ''}${stamp}.csv`;
+        const range = from || to ? `-${from || 'start'}_to_${to || stamp}` : '';
+        const filename = `users-plans-${plan || (filtered ? 'filtered' : 'all')}${range}-${stamp}.csv`;
         logPortalFlow(req, 'Plan analytics subscribers CSV exported', {
             layer: 'PLAN_ANALYTICS',
             summary: {
-                planId, topupPlanId, addonPlanId, month, day,
+                plan, planId, topupPlanId, addonPlanId, month, day, from, to,
                 search: search || null, status, filtered, rowCount: enriched.length,
             },
         });
@@ -661,7 +953,90 @@ exports.exportSubscribers = async (req, res, pools) => {
         logger.errorWithContext('Plan analytics subscribers CSV export failed', e, {
             requestId: req.requestId,
             layer: 'PLAN_ANALYTICS',
-            summary: { planId, topupPlanId, addonPlanId, month, day, search: search || null, status, filtered },
+            summary: { plan, planId, topupPlanId, addonPlanId, month, day, search: search || null, status, filtered },
+        });
+        return res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+/** GET /subscribers/:userId/invoices — plan invoices plus top-up and add-on receipts for one user. */
+exports.getSubscriberInvoices = async (req, res, pools) => {
+    const userId = parseInt(req.params.userId, 10);
+    if (!Number.isFinite(userId)) return res.status(400).json({ success: false, message: 'Invalid user id' });
+    try {
+        const userRes = await pools.authPool.query(
+            `SELECT id, username, email, is_blocked, active_plan_name, created_at
+             FROM users WHERE id = $1`,
+            [userId]
+        );
+        const user = userRes.rows[0];
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        const planSql = (legacy) => `
+            SELECT p.id, p.amount, p.currency, p.status, p.payment_method,
+                   p.created_at, p.transaction_date, p.razorpay_payment_id, p.razorpay_order_id,
+                   TRIM(COALESCE(mp.name${legacy ? ', sp.name' : ''}, '')) AS plan_name
+            FROM payments p
+            LEFT JOIN user_subscriptions us ON us.id = p.subscription_id
+            LEFT JOIN monthly_plans mp ON mp.id = us.monthly_plan_id
+            ${legacy ? 'LEFT JOIN subscription_plans sp ON sp.id = us.plan_id' : ''}
+            WHERE p.user_id = $1
+            ORDER BY p.created_at DESC NULLS LAST, p.id DESC`;
+        let planRows;
+        try {
+            planRows = await pools.paymentPool.query(planSql(true), [userId]);
+        } catch {
+            planRows = await pools.paymentPool.query(planSql(false), [userId]);
+        }
+        const [topupRows, addonRows] = await Promise.all([
+            pools.paymentPool.query(
+                `SELECT tp.id, tp.amount, tp.currency, tp.status, tp.created_at,
+                        tp.razorpay_payment_id, tp.razorpay_order_id, pl.name AS plan_name
+                 FROM user_token_topup_purchases tp
+                 LEFT JOIN topup_plans pl ON pl.id = tp.topup_plan_id
+                 WHERE tp.user_id = $1
+                 ORDER BY tp.created_at DESC NULLS LAST, tp.id DESC`,
+                [userId]
+            ).catch(() => ({ rows: [] })),
+            pools.paymentPool.query(
+                `SELECT up.id, up.amount, up.currency, up.status, up.created_at,
+                        up.razorpay_payment_id, up.razorpay_order_id, ap.name AS plan_name
+                 FROM user_storage_addon_purchases up
+                 LEFT JOIN addon_plans ap ON ap.id = up.addon_plan_id
+                 WHERE up.user_id = $1
+                 ORDER BY up.created_at DESC NULLS LAST, up.id DESC`,
+                [userId]
+            ).catch(() => ({ rows: [] })),
+        ]);
+        const invoices = [
+            ...planRows.rows.map((r) => mapInvoiceRow(r, 'plan')),
+            ...topupRows.rows.map((r) => mapInvoiceRow(r, 'topup')),
+            ...addonRows.rows.map((r) => mapInvoiceRow(r, 'addon')),
+        ].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        const active = String(user.active_plan_name || '').trim();
+        logPortalFlow(req, 'Plan analytics user invoices loaded', {
+            layer: 'PLAN_ANALYTICS',
+            summary: { userId, invoiceCount: invoices.length },
+        });
+        return res.status(200).json({
+            success: true,
+            data: {
+                user: {
+                    user_id: user.id,
+                    username: user.username || null,
+                    email: user.email || null,
+                    is_blocked: Boolean(user.is_blocked),
+                    plan_name: active || 'Free',
+                    plan_key: canonicalPlanKey(active || 'Free'),
+                },
+                invoices,
+            },
+        });
+    } catch (e) {
+        logger.errorWithContext('Plan analytics user invoices failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { userId },
         });
         return res.status(500).json({ success: false, message: e.message });
     }
@@ -695,3 +1070,95 @@ exports.getTopupBuyers = async (req, res, pools) => {
     }
 };
 
+
+const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function billingDocHtml(doc, { user, pay }) {
+    const isInvoice = doc === 'invoice';
+    const date = pay.created_at || pay.transaction_date;
+    const dateStr = date ? new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const amount = `${pay.currency && pay.currency !== 'INR' ? `${escHtml(pay.currency)} ` : '₹'}${num(pay.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const number = isInvoice ? `INV-${pay.id}` : (pay.razorpay_payment_id || `RCPT-${pay.id}`);
+    const rows = [
+        [isInvoice ? 'Invoice no.' : 'Receipt no.', escHtml(number)],
+        ['Date', dateStr],
+        ['Billed to', `${escHtml(user.username || `User #${user.id}`)}${user.email ? `<br><span class="muted">${escHtml(user.email)}</span>` : ''}`],
+        ['Payment ID', escHtml(pay.razorpay_payment_id || '—')],
+        ['Order ID', escHtml(pay.razorpay_order_id || '—')],
+        ['Payment method', escHtml(pay.payment_method || 'Razorpay')],
+        ['Status', escHtml(pay.status || '—')],
+    ];
+    return `<!doctype html><html><head><meta charset="utf-8"><style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#1e293b;margin:48px;font-size:13px}
+        h1{font-size:26px;margin:0 0 4px;color:#1d4ed8}.muted{color:#64748b;font-size:12px}
+        table{width:100%;border-collapse:collapse;margin-top:24px}td,th{padding:10px 8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
+        th{background:#f8fafc;font-size:11px;text-transform:uppercase;color:#64748b}.r{text-align:right}.total td{font-weight:bold;font-size:15px;border-bottom:2px solid #1e293b}
+        .meta td:first-child{width:160px;color:#64748b}
+    </style></head><body>
+        <h1>${isInvoice ? 'Invoice' : 'Payment Receipt'}</h1>
+        <div class="muted">${isInvoice ? 'Subscription invoice' : 'Payment received — thank you'}</div>
+        <table class="meta">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>
+        <table><tr><th>Description</th><th class="r">Amount</th></tr>
+            <tr><td>${escHtml(pay.plan_name || 'Plan')} subscription</td><td class="r">${amount}</td></tr>
+            <tr class="total"><td>${isInvoice ? 'Total' : 'Amount paid'}</td><td class="r">${amount}</td></tr></table>
+        <p class="muted" style="margin-top:32px">This is a computer-generated document and does not require a signature.</p>
+    </body></html>`;
+}
+
+/** GET /subscribers/:userId/payments/:paymentId/:doc — download a plan payment's invoice or receipt as PDF. */
+exports.downloadSubscriberDocument = async (req, res, pools) => {
+    const userId = parseInt(req.params.userId, 10);
+    const paymentId = parseInt(req.params.paymentId, 10);
+    const doc = req.params.doc;
+    if (!Number.isFinite(userId) || !Number.isFinite(paymentId) || !['invoice', 'receipt'].includes(doc)) {
+        return res.status(400).json({ success: false, message: 'Invalid request' });
+    }
+    let browser = null;
+    try {
+        const userRes = await pools.authPool.query('SELECT id, username, email FROM users WHERE id = $1', [userId]);
+        const user = userRes.rows[0];
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        const paySql = (legacy) => `
+            SELECT p.id, p.amount, p.currency, p.status, p.payment_method, p.created_at, p.transaction_date,
+                   p.razorpay_payment_id, p.razorpay_order_id,
+                   TRIM(COALESCE(mp.name${legacy ? ', sp.name' : ''}, '')) AS plan_name
+            FROM payments p
+            LEFT JOIN user_subscriptions us ON us.id = p.subscription_id
+            LEFT JOIN monthly_plans mp ON mp.id = us.monthly_plan_id
+            ${legacy ? 'LEFT JOIN subscription_plans sp ON sp.id = us.plan_id' : ''}
+            WHERE p.id = $1 AND p.user_id = $2 AND ${PAID_FILTER}`;
+        let payRes;
+        try {
+            payRes = await pools.paymentPool.query(paySql(true), [paymentId, userId]);
+        } catch {
+            payRes = await pools.paymentPool.query(paySql(false), [paymentId, userId]);
+        }
+        const pay = payRes.rows[0];
+        if (!pay) return res.status(404).json({ success: false, message: 'Paid payment not found for this user' });
+
+        const puppeteer = require('puppeteer');
+        browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+        const page = await browser.newPage();
+        await page.setContent(billingDocHtml(doc, { user, pay }), { waitUntil: 'load' });
+        const pdf = await page.pdf({ format: 'A4', printBackground: true });
+
+        logPortalFlow(req, 'Plan analytics billing document downloaded', {
+            layer: 'PLAN_ANALYTICS',
+            summary: { userId, paymentId, doc },
+        });
+        const filename = `${doc}-${doc === 'invoice' ? `INV-${pay.id}` : (pay.razorpay_payment_id || pay.id)}.pdf`;
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.status(200).send(Buffer.from(pdf));
+    } catch (e) {
+        logger.errorWithContext('Plan analytics billing document failed', e, {
+            requestId: req.requestId,
+            layer: 'PLAN_ANALYTICS',
+            summary: { userId, paymentId, doc },
+        });
+        return res.status(500).json({ success: false, message: e.message });
+    } finally {
+        if (browser) await browser.close().catch(() => {});
+    }
+};

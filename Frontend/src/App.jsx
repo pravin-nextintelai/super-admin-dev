@@ -150,12 +150,12 @@ function App() {
             <Route path="newsletter-subscribers" element={<RequireRole allow={['marketing-admin']}><NewsletterSubscribers /></RequireRole>} />
             <Route path="offers-events" element={<RequireRole allow={['marketing-admin']}><MarketingPromos /></RequireRole>} />
             <Route path="audit-logs" element={<RequireRole allow={[]}><AuditLogs /></RequireRole>} />
-            {/* Sales Referrals — super-admin only */}
-            <Route path={SALES_REFERRALS_ROUTES.overview} element={<RequireRole allow={[]}><SalesReferralsOverviewPage /></RequireRole>} />
-            <Route path={SALES_REFERRALS_ROUTES.data} element={<RequireRole allow={[]}><ReferralDataPage /></RequireRole>} />
-            <Route path={SALES_REFERRALS_ROUTES.owner} element={<RequireRole allow={[]}><SalesOwnerDetailPage /></RequireRole>} />
-            <Route path={SALES_REFERRALS_ROUTES.codeSignups} element={<RequireRole allow={[]}><ReferralSignupsPage /></RequireRole>} />
-            <Route path={SALES_REFERRALS_ROUTES.ownerSignups} element={<RequireRole allow={[]}><ReferralSignupsPage /></RequireRole>} />
+            {/* Sales Referrals — super-admin and finance-admin */}
+            <Route path={SALES_REFERRALS_ROUTES.overview} element={<RequireRole allow={['finance-admin']}><SalesReferralsOverviewPage /></RequireRole>} />
+            <Route path={SALES_REFERRALS_ROUTES.data} element={<RequireRole allow={['finance-admin']}><ReferralDataPage /></RequireRole>} />
+            <Route path={SALES_REFERRALS_ROUTES.owner} element={<RequireRole allow={['finance-admin']}><SalesOwnerDetailPage /></RequireRole>} />
+            <Route path={SALES_REFERRALS_ROUTES.codeSignups} element={<RequireRole allow={['finance-admin']}><ReferralSignupsPage /></RequireRole>} />
+            <Route path={SALES_REFERRALS_ROUTES.ownerSignups} element={<RequireRole allow={['finance-admin']}><ReferralSignupsPage /></RequireRole>} />
             <Route path="judgements" element={<RequireRole allow={[]}><JudgementManagement /></RequireRole>} />
             <Route path="judgement-search" element={<RequireRole allow={[]}><JudgementSearch /></RequireRole>} />
             <Route path="citation-management" element={<RequireRole allow={[]}><CitationManagement /></RequireRole>} />

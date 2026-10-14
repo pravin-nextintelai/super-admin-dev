@@ -3,7 +3,7 @@
  * Mounted at /api/admin/sales-referrals and /api/v1/admin/sales-referrals (see server.js).
  *
  * Data: Auth / Main DB → sales_owners, referral_codes, tenant_referrals (workspaces = firms).
- * Auth: adminAuth.middleware (static ADMIN_TOKEN or dashboard JWT) + super-admin role gate.
+ * Auth: adminAuth.middleware (static ADMIN_TOKEN or dashboard JWT) + super-admin / finance-admin role gate.
  */
 const express = require('express');
 const adminAuth = require('../middleware/adminAuth.middleware');
@@ -11,7 +11,7 @@ const logger = require('../config/logger');
 const { makeControllers } = require('../controllers/salesReferralsController');
 
 // 'admin' is the legacy generic super role used by older dashboard accounts.
-const ALLOWED_ROLES = ['super-admin', 'admin'];
+const ALLOWED_ROLES = ['super-admin', 'admin', 'finance-admin'];
 
 function requireSuperAdmin(req, res, next) {
   // No req.user → request passed adminAuth with the static ADMIN_TOKEN (Postman / test runner).

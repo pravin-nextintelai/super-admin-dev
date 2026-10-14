@@ -1,5 +1,5 @@
-// Route paths for the Sales Referrals module. All of them are super-admin only
-// (registered in App.jsx with `RequireRole allow={[]}`).
+// Route paths for the Sales Referrals module. Super-admin and finance-admin only
+// (registered in App.jsx with `RequireRole allow={['finance-admin']}`).
 export const SALES_REFERRALS_BASE = '/dashboard/sales-referrals';
 
 export const SALES_REFERRALS_ROUTES = Object.freeze({

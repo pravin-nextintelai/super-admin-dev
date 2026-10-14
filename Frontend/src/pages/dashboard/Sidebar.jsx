@@ -86,7 +86,7 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
       name: SALES_REFERRALS_TEXT.nav.item,
       path: SALES_REFERRALS_BASE,
       icon: Ticket,
-      roles: ['super-admin'],
+      roles: ['super-admin', 'finance-admin'],
       matchPrefix: true,
     },
     {
