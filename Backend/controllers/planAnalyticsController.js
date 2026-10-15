@@ -10,6 +10,8 @@ const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const PAID = ['captured', 'paid', 'success', 'succeeded', 'completed'];
 const { logPortalFlow } = require('../utils/portalAdminLog');
 const logger = require('../config/logger');
+const up = require('../services/usersPlansService');
+const { paiseToRupeeString } = require('../utils/money');
 
 /** Enrich Payment-DB rows (which only have user_id) with username/email from the Auth DB. */
 async function attachUsers(rows, authPool) {
@@ -364,6 +366,7 @@ function parseSubscriberQuery(query) {
         plan: PLAN_TIERS.includes(planRaw) ? planRaw : null,
         from,
         to,
+        ...up.parseExtendedQuery(query),
     };
 }
 
@@ -494,19 +497,8 @@ async function billingFilterIds(paymentPool, plan) {
 async function constraintUserIds(paymentPool, filters) {
     const lists = [];
     if (filters.from || filters.to) {
-        // Purchase date = latest paid plan payment (IST), same as the table's "Purchase date" column.
-        lists.push(await queryIds(
-            paymentPool,
-            `SELECT user_id FROM (
-                SELECT p.user_id, (MAX(p.created_at) AT TIME ZONE 'Asia/Kolkata')::date AS purchased_on
-                FROM payments p
-                WHERE ${PAID_FILTER}
-                GROUP BY p.user_id
-             ) s
-             WHERE ($1::date IS NULL OR s.purchased_on >= $1::date)
-               AND ($2::date IS NULL OR s.purchased_on <= $2::date)`,
-            [filters.from, filters.to]
-        ));
+        // Purchase date = the user's latest paid plan payment (IST calendar days; `to` inclusive → exclusive boundary in SQL).
+        lists.push(await up.queryUserIdsPurchasedBetween(paymentPool, filters.from, filters.to));
     }
     if (filters.planId != null) {
         lists.push(await queryIds(
@@ -704,8 +696,9 @@ async function attachBilling(userRows, paymentPool) {
     const addonNames = new Map();
     const topupPaid = new Map();
     const addonPaid = new Map();
+    const latest = new Map();
     if (ids.length) {
-        const [subRes, invoiceRes, names, packs] = await Promise.all([
+        const [subRes, invoiceRes, names, packs, latestRes] = await Promise.all([
             queryCurrentSubs(paymentPool, ids),
             queryPlanInvoices(paymentPool, ids).catch((e) => {
                 logger.errorWithContext('Plan analytics invoice summary failed', e, {
@@ -716,7 +709,12 @@ async function attachBilling(userRows, paymentPool) {
             }),
             queryPackNames(paymentPool, ids),
             queryPackPaid(paymentPool, ids),
+            up.queryLatestPlanPayments(paymentPool, ids).catch((e) => {
+                logger.errorWithContext('Users & Plans latest payment lookup failed', e, { layer: 'PLAN_ANALYTICS', summary: { userCount: ids.length } });
+                return new Map();
+            }),
         ]);
+        latestRes.forEach((r, id) => latest.set(id, r));
         subRes.rows.forEach((r) => subs.set(Number(r.user_id), r));
         invoiceRes.rows.forEach((r) => invoices.set(Number(r.user_id), r));
         names.topups.forEach((r) => topupNames.set(Number(r.user_id), r.names));
@@ -737,11 +735,22 @@ async function attachBilling(userRows, paymentPool) {
         const receiptIds = Array.isArray(inv?.receipt_ids) ? inv.receipt_ids.filter(Boolean) : [];
         const invoiceIds = Array.isArray(inv?.invoice_ids) ? inv.invoice_ids.filter(Boolean) : [];
         const paidTotal = num(inv?.paid_total) + num(top?.paid_total) + num(add?.paid_total);
+        const latestRow = latest.get(id);
+        const latestPayment = latestRow ? up.serializePayment(latestRow) : null;
+        const attrs = u.owner_type !== undefined ? up.serializeUserAttributes(u) : null;
         return {
             user_id: u.id,
             username: u.username || null,
             email: u.email || null,
             is_blocked: Boolean(u.is_blocked),
+            // Users & Plans extensions (attribution, derived status, latest paid plan payment with GST + references)
+            user_status: attrs?.user_status ?? null,
+            owner_type: attrs?.owner_type ?? null,
+            sales_owner: attrs?.sales_owner ?? null,
+            referral_code: attrs?.referral_code ?? null,
+            referral: attrs?.referral ?? null,
+            latest_payment: latestPayment,
+            plan_transaction_count: num(latestRow?.paid_count),
             plan_name: planKey === 'free' && !active && !billingName ? 'Free' : planName,
             plan_key: planKey,
             plan_category: planKey,
@@ -784,7 +793,7 @@ async function loadPlanTierCounts(authPool) {
 }
 
 async function loadSubscriberFacets(authPool, paymentPool) {
-    const [plans, topupPlans, addonRes, statusRes, tierCounts] = await Promise.all([
+    const [plans, topupPlans, addonRes, statusRes, tierCounts, salesOwners] = await Promise.all([
         paymentPool.query(`SELECT id, name FROM monthly_plans ORDER BY sort_order ASC, id ASC`),
         paymentPool.query(`SELECT id, name FROM topup_plans ORDER BY sort_order ASC, id ASC`),
         paymentPool.query(`SELECT id, name FROM addon_plans ORDER BY sort_order ASC, id ASC`).catch(() => ({ rows: [] })),
@@ -795,6 +804,7 @@ async function loadSubscriberFacets(authPool, paymentPool) {
              ORDER BY 1`
         ).catch(() => ({ rows: [{ status: 'active' }, { status: 'topup_only' }] })),
         loadPlanTierCounts(authPool),
+        up.listSalesOwners(authPool).catch(() => []),
     ]);
     const known = ['active', 'free', 'topup_only', 'pack_only', 'cancelled', 'expired', 'inactive'];
     const fromDb = statusRes.rows.map((r) => r.status).filter(Boolean);
@@ -811,8 +821,24 @@ async function loadSubscriberFacets(authPool, paymentPool) {
         statuses,
         tiers,
         tierCounts,
+        salesOwners,
+        ownerTypes: up.OWNER_TYPES,
+        userStatuses: up.USER_STATUSES,
+        sortFields: up.SORT_FIELDS,
+        transactionSortFields: up.TX_SORT_FIELDS,
     };
 }
+
+/** GET /filters — facet lists for the Users & Plans screen. */
+exports.getSubscriberFilters = async (req, res, pools) => {
+    try {
+        const facets = await loadSubscriberFacets(pools.authPool, pools.paymentPool);
+        return res.status(200).json({ success: true, data: facets });
+    } catch (e) {
+        logger.errorWithContext('Users & Plans filters failed', e, { requestId: req.requestId, layer: 'PLAN_ANALYTICS' });
+        return res.status(500).json({ success: false, message: e.message });
+    }
+};
 
 async function queryUsers(authPool, filters, extra, limit, offset) {
     const { whereSql, params } = buildUserWhere(filters, extra);
@@ -859,8 +885,10 @@ function mapInvoiceRow(row, kind) {
 exports.getSubscribers = async (req, res, pools) => {
     const filters = parseSubscriberQuery(req.query);
     if (!filters.plan && filters.status === 'free') filters.plan = 'free';
-    const { page, pageSize, planId, topupPlanId, addonPlanId, day, month, search, status, plan } = filters;
+    const { page, pageSize, planId, topupPlanId, addonPlanId, day, month, search, status, plan, from, to, view, sortBy, sortDir } = filters;
     const offset = (page - 1) * pageSize;
+    const logSummary = { page, pageSize, plan, planId, topupPlanId, addonPlanId, month, day, from, to, view, sortBy, sortDir,
+        ownerType: filters.ownerType, ownerId: filters.ownerId, code: filters.code, userStatus: filters.userStatus, search: search || null, status };
 
     try {
         const [billingIds, constraintIds] = await Promise.all([
@@ -868,93 +896,177 @@ exports.getSubscribers = async (req, res, pools) => {
             constraintUserIds(pools.paymentPool, filters),
         ]);
         const facetsPromise = loadSubscriberFacets(pools.authPool, pools.paymentPool);
+        const extra = { ...billingIds, constraintIds };
+
+        if (view === 'transactions') {
+            const data = await listTransactionsView(pools, filters, extra, pageSize, offset);
+            data.filters = await facetsPromise;
+            logPortalFlow(req, 'Plan analytics transactions list loaded', {
+                layer: 'PLAN_ANALYTICS', summary: { ...logSummary, total: data.total, rowCount: data.rows.length },
+            });
+            return res.status(200).json({ success: true, data });
+        }
+
         if (constraintIds && constraintIds.length === 0) {
             const facets = await facetsPromise;
-            logPortalFlow(req, 'Plan analytics subscribers list loaded', {
-                layer: 'PLAN_ANALYTICS',
-                summary: { page, pageSize, plan, planId, topupPlanId, addonPlanId, month, day, search, status, total: 0, rowCount: 0 },
-            });
-            return res.status(200).json({
-                success: true,
-                data: { rows: [], total: 0, page, pageSize, filters: facets },
-            });
+            logPortalFlow(req, 'Plan analytics subscribers list loaded', { layer: 'PLAN_ANALYTICS', summary: { ...logSummary, total: 0, rowCount: 0 } });
+            return res.status(200).json({ success: true, data: { rows: [], total: 0, page, pageSize, view: 'users', sortBy, sortDir, filters: facets } });
         }
-        const { total, rows } = await queryUsers(
-            pools.authPool,
-            filters,
-            { ...billingIds, constraintIds },
-            pageSize,
-            offset
-        );
+        if (sortBy === 'purchase_date' || sortBy === 'total_amount') {
+            extra.orderedIds = await up.queryUserIdsOrderedByPayment(pools.paymentPool, sortBy, sortDir);
+        }
+        const { total, rows } = await up.queryUsersPage(pools.authPool, filters, extra, tierSql, pageSize, offset);
         const enriched = await attachBilling(rows, pools.paymentPool);
         const facets = await facetsPromise;
         logPortalFlow(req, 'Plan analytics subscribers list loaded', {
             layer: 'PLAN_ANALYTICS',
-            summary: {
-                page, pageSize, plan, planId, topupPlanId, addonPlanId, month, day,
-                search: search || null, status, total, rowCount: enriched.length,
-            },
+            summary: { ...logSummary, total, rowCount: enriched.length },
             table: enriched.slice(0, 8).map((r) => ({
-                user_id: r.user_id, email: r.email, plan_name: r.plan_name, status: r.status, invoice_count: r.invoice_count,
+                user_id: r.user_id, email: r.email, plan_name: r.plan_name, user_status: r.user_status, owner_type: r.owner_type, invoice_count: r.invoice_count,
             })),
         });
         return res.status(200).json({
             success: true,
-            data: { rows: enriched, total, page, pageSize, filters: facets },
+            data: { rows: enriched, total, page, pageSize, view: 'users', sortBy, sortDir, filters: facets },
         });
     } catch (e) {
-        logger.errorWithContext('Plan analytics subscribers list failed', e, {
-            requestId: req.requestId,
-            layer: 'PLAN_ANALYTICS',
-            summary: { page, pageSize, plan, planId, topupPlanId, addonPlanId, month, day, search: search || null, status },
-        });
+        logger.errorWithContext('Plan analytics subscribers list failed', e, { requestId: req.requestId, layer: 'PLAN_ANALYTICS', summary: logSummary });
         return res.status(500).json({ success: false, message: e.message });
     }
 };
+
+/** view=transactions — one row per paid plan payment (users with several purchases appear once per purchase). */
+async function listTransactionsView(pools, filters, extra, limit, offset) {
+    const userIds = await up.queryMatchingUserIds(pools.authPool, filters, extra, tierSql);
+    if (userIds && userIds.length === 0) {
+        return { rows: [], total: 0, page: filters.page, pageSize: filters.pageSize, view: 'transactions', sortBy: filters.sortBy, sortDir: filters.sortDir };
+    }
+    const txSort = up.TX_SORT_FIELDS.includes(filters.sortBy) ? filters.sortBy : 'purchase_date';
+    const { total, rows } = await up.queryPaymentsPage(
+        pools.paymentPool,
+        { userIds, from: filters.from, to: filters.to, paidOnly: true, sortBy: txSort, sortDir: filters.sortDir },
+        limit,
+        offset
+    );
+    const attrs = await up.queryUserAttributes(pools.authPool, joinIds(rows.map((r) => r.user_id)));
+    const out = rows.map((r) => {
+        const user = up.serializeUserAttributes(attrs.get(Number(r.user_id)))
+            || { user_id: Number(r.user_id), username: null, email: null, user_status: null, owner_type: null, sales_owner: null, referral_code: null };
+        return { ...user, plan_name: r.plan_name || null, payment: up.serializePayment(r) };
+    });
+    return { rows: out, total, page: filters.page, pageSize: filters.pageSize, view: 'transactions', sortBy: txSort, sortDir: filters.sortDir };
+}
 
 /** GET /subscribers/export — CSV of matching users (Free, Pro, Plus, Lite, Enterprise, or the active filters). */
 exports.exportSubscribers = async (req, res, pools) => {
     const filters = parseSubscriberQuery(req.query);
     if (!filters.plan && filters.status === 'free') filters.plan = 'free';
-    const { planId, topupPlanId, addonPlanId, day, month, search, status, plan, from, to } = filters;
-    const filtered = Boolean(search || plan || planId || topupPlanId || addonPlanId || month || day || status || from || to);
+    const { planId, topupPlanId, addonPlanId, day, month, search, status, plan, from, to, view } = filters;
+    const filtered = Boolean(search || plan || planId || topupPlanId || addonPlanId || month || day || status || from || to
+        || filters.ownerType || filters.ownerId || filters.code || filters.userStatus);
+    const logSummary = { plan, planId, topupPlanId, addonPlanId, month, day, from, to, view, search: search || null, status, filtered,
+        ownerType: filters.ownerType, ownerId: filters.ownerId, code: filters.code, userStatus: filters.userStatus };
 
     try {
         const [billingIds, constraintIds] = await Promise.all([
             billingFilterIds(pools.paymentPool, plan),
             constraintUserIds(pools.paymentPool, filters),
         ]);
-        let enriched = [];
-        if (!(constraintIds && constraintIds.length === 0)) {
-            const { rows } = await queryUsers(
-                pools.authPool,
-                filters,
-                { ...billingIds, constraintIds },
-                EXPORT_LIMIT,
-                null
-            );
-            enriched = await attachBilling(rows, pools.paymentPool);
+        const extra = { ...billingIds, constraintIds };
+        const lines = [];
+        if (view === 'transactions') {
+            const data = await listTransactionsView(pools, filters, extra, EXPORT_LIMIT, null);
+            data.rows.forEach((r) => lines.push(up.csvLine(r, r.payment, r.plan_name)));
+        } else if (!(constraintIds && constraintIds.length === 0)) {
+            if (filters.sortBy === 'purchase_date' || filters.sortBy === 'total_amount') {
+                extra.orderedIds = await up.queryUserIdsOrderedByPayment(pools.paymentPool, filters.sortBy, filters.sortDir);
+            }
+            const { rows } = await up.queryUsersPage(pools.authPool, filters, extra, tierSql, EXPORT_LIMIT, null);
+            const enriched = await attachBilling(rows, pools.paymentPool);
+            enriched.forEach((r) => lines.push(up.csvLine(r, r.latest_payment, r.plan_name)));
         }
-        const csv = subscribersToCsv(enriched);
+        const csv = up.toCsv(lines);
         const stamp = new Date().toISOString().slice(0, 10);
         const range = from || to ? `-${from || 'start'}_to_${to || stamp}` : '';
-        const filename = `users-plans-${plan || (filtered ? 'filtered' : 'all')}${range}-${stamp}.csv`;
-        logPortalFlow(req, 'Plan analytics subscribers CSV exported', {
-            layer: 'PLAN_ANALYTICS',
-            summary: {
-                plan, planId, topupPlanId, addonPlanId, month, day, from, to,
-                search: search || null, status, filtered, rowCount: enriched.length,
-            },
-        });
+        const filename = `users-plans-${view === 'transactions' ? 'transactions-' : ''}${plan || (filtered ? 'filtered' : 'all')}${range}-${stamp}.csv`;
+        logPortalFlow(req, 'Plan analytics subscribers CSV exported', { layer: 'PLAN_ANALYTICS', summary: { ...logSummary, rowCount: lines.length } });
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         return res.status(200).send(csv);
     } catch (e) {
-        logger.errorWithContext('Plan analytics subscribers CSV export failed', e, {
-            requestId: req.requestId,
-            layer: 'PLAN_ANALYTICS',
-            summary: { plan, planId, topupPlanId, addonPlanId, month, day, search: search || null, status, filtered },
+        logger.errorWithContext('Plan analytics subscribers CSV export failed', e, { requestId: req.requestId, layer: 'PLAN_ANALYTICS', summary: logSummary });
+        return res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+/** GET /subscribers/:userId — profile, attribution, firm, subscription history, every payment with GST, refunds, packs. */
+exports.getSubscriberDetail = async (req, res, pools) => {
+    const userId = parseInt(req.params.userId, 10);
+    if (!Number.isFinite(userId)) return res.status(400).json({ success: false, message: 'Invalid user id' });
+    try {
+        const attrs = await up.queryUserAttributes(pools.authPool, [userId]);
+        const raw = attrs.get(userId);
+        const user = up.serializeUserAttributes(raw);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        const [firm, history] = await Promise.all([
+            up.queryUserFirm(pools.authPool, userId),
+            up.queryUserPaymentHistory(pools.paymentPool, userId),
+        ]);
+        const payments = history.payments.map(up.serializePayment);
+        const paid = payments.filter((p) => p.is_paid);
+        const data = {
+            user: {
+                ...user,
+                phone: raw.phone || null,
+                location: raw.location || null,
+                plan_name: raw.active_plan_name || 'Free',
+                plan_key: canonicalPlanKey(raw.active_plan_name || 'Free'),
+            },
+            firm: firm ? {
+                id: firm.id, name: firm.firm_name, type: firm.firm_type, approval_status: firm.approval_status,
+                city: firm.city, state: firm.state, gst_number: firm.gst_number || null, pan_number: firm.pan_number || null, member_role: firm.member_role,
+            } : null,
+            current_subscription: history.subscriptions.length ? up.serializeSubscription(history.subscriptions[0]) : null,
+            subscriptions: history.subscriptions.map(up.serializeSubscription),
+            payments,
+            latest_payment: paid[0] || null,
+            refunds: history.refunds.map(up.serializeRefund),
+            topups: history.topups.map((r) => up.serializePack(r, 'topup')),
+            addons: history.addons.map((r) => up.serializePack(r, 'addon')),
+            totals: {
+                paid_plan_payments: paid.length,
+                plan_paid_total: paiseToRupeeString(paid.reduce((acc, p) => acc + (p.paise.total || 0), 0)),
+                refunded_total: paiseToRupeeString(paid.reduce((acc, p) => acc + (p.paise.refunded || 0), 0)),
+            },
+        };
+        logPortalFlow(req, 'Users & Plans user detail loaded', { layer: 'PLAN_ANALYTICS', summary: { userId, payments: payments.length, refunds: data.refunds.length } });
+        return res.status(200).json({ success: true, data });
+    } catch (e) {
+        logger.errorWithContext('Users & Plans user detail failed', e, { requestId: req.requestId, layer: 'PLAN_ANALYTICS', summary: { userId } });
+        return res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+/** GET /subscribers/:userId/transactions — complete history: plan payments (any status), top-ups, add-ons, refunds. */
+exports.getSubscriberTransactions = async (req, res, pools) => {
+    const userId = parseInt(req.params.userId, 10);
+    if (!Number.isFinite(userId)) return res.status(400).json({ success: false, message: 'Invalid user id' });
+    try {
+        const exists = await pools.authPool.query('SELECT 1 FROM users WHERE id = $1', [userId]);
+        if (!exists.rows.length) return res.status(404).json({ success: false, message: 'User not found' });
+        const history = await up.queryUserPaymentHistory(pools.paymentPool, userId);
+        const transactions = [
+            ...history.payments.map(up.serializePayment),
+            ...history.topups.map((r) => up.serializePack(r, 'topup')),
+            ...history.addons.map((r) => up.serializePack(r, 'addon')),
+        ].sort((a, b) => new Date(b.purchase_date || 0) - new Date(a.purchase_date || 0));
+        logPortalFlow(req, 'Users & Plans transactions loaded', { layer: 'PLAN_ANALYTICS', summary: { userId, count: transactions.length } });
+        return res.status(200).json({
+            success: true,
+            data: { user_id: userId, transactions, refunds: history.refunds.map(up.serializeRefund), total: transactions.length },
         });
+    } catch (e) {
+        logger.errorWithContext('Users & Plans transactions failed', e, { requestId: req.requestId, layer: 'PLAN_ANALYTICS', summary: { userId } });
         return res.status(500).json({ success: false, message: e.message });
     }
 };
@@ -1075,32 +1187,42 @@ const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;
 
 function billingDocHtml(doc, { user, pay }) {
     const isInvoice = doc === 'invoice';
-    const date = pay.created_at || pay.transaction_date;
-    const dateStr = date ? new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-    const amount = `${pay.currency && pay.currency !== 'INR' ? `${escHtml(pay.currency)} ` : '₹'}${num(pay.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const number = isInvoice ? `INV-${pay.id}` : (pay.razorpay_payment_id || `RCPT-${pay.id}`);
+    const date = pay.purchase_date || pay.created_at;
+    const dateStr = date ? new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—';
+    const cur = pay.currency && pay.currency !== 'INR' ? `${escHtml(pay.currency)} ` : '₹';
+    const money = (v) => (v == null ? '—' : `${cur}${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
     const rows = [
-        [isInvoice ? 'Invoice no.' : 'Receipt no.', escHtml(number)],
+        isInvoice ? ['Invoice number', escHtml(pay.invoice_number)] : ['Receipt reference', escHtml(pay.razorpay_receipt || `Payment ${pay.razorpay_payment_id || pay.payment_id}`)],
         ['Date', dateStr],
         ['Billed to', `${escHtml(user.username || `User #${user.id}`)}${user.email ? `<br><span class="muted">${escHtml(user.email)}</span>` : ''}`],
-        ['Payment ID', escHtml(pay.razorpay_payment_id || '—')],
-        ['Order ID', escHtml(pay.razorpay_order_id || '—')],
+        ['Razorpay Payment ID', escHtml(pay.razorpay_payment_id || '—')],
+        ['Razorpay Order ID', escHtml(pay.razorpay_order_id || '—')],
+        ...(pay.razorpay_invoice_number ? [['Razorpay invoice', escHtml(pay.razorpay_invoice_number)]] : []),
         ['Payment method', escHtml(pay.payment_method || 'Razorpay')],
         ['Status', escHtml(pay.status || '—')],
+        ...(pay.paise.refunded > 0 ? [['Refunded', money(pay.amount_refunded)]] : []),
     ];
+    const taxLines = pay.tax ? [
+        ['Taxable value', money(pay.basic_amount)],
+        ...(pay.tax.type === 'IGST' ? [[`IGST @ ${escHtml(pay.tax.igst_rate || '')}%`, money(pay.igst_amount)]] : [
+            [`CGST @ ${escHtml(pay.tax.cgst_rate || '')}%`, money(pay.cgst_amount)],
+            [`SGST @ ${escHtml(pay.tax.sgst_rate || '')}%`, money(pay.sgst_amount)],
+        ]),
+    ] : [];
     return `<!doctype html><html><head><meta charset="utf-8"><style>
         body{font-family:Arial,Helvetica,sans-serif;color:#1e293b;margin:48px;font-size:13px}
         h1{font-size:26px;margin:0 0 4px;color:#1d4ed8}.muted{color:#64748b;font-size:12px}
         table{width:100%;border-collapse:collapse;margin-top:24px}td,th{padding:10px 8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
         th{background:#f8fafc;font-size:11px;text-transform:uppercase;color:#64748b}.r{text-align:right}.total td{font-weight:bold;font-size:15px;border-bottom:2px solid #1e293b}
-        .meta td:first-child{width:160px;color:#64748b}
+        .meta td:first-child{width:180px;color:#64748b}.sub td{color:#475569}
     </style></head><body>
-        <h1>${isInvoice ? 'Invoice' : 'Payment Receipt'}</h1>
-        <div class="muted">${isInvoice ? 'Subscription invoice' : 'Payment received — thank you'}</div>
+        <h1>${isInvoice ? 'Tax Invoice' : 'Payment Receipt'}</h1>
+        <div class="muted">${isInvoice ? 'Subscription invoice' : 'Payment received — thank you'}${pay.tax?.basis === 'inclusive' ? ' · prices inclusive of GST' : ''}</div>
         <table class="meta">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>
         <table><tr><th>Description</th><th class="r">Amount</th></tr>
-            <tr><td>${escHtml(pay.plan_name || 'Plan')} subscription</td><td class="r">${amount}</td></tr>
-            <tr class="total"><td>${isInvoice ? 'Total' : 'Amount paid'}</td><td class="r">${amount}</td></tr></table>
+            <tr><td>${escHtml(pay.plan_name || 'Plan')} subscription</td><td class="r">${money(pay.tax ? pay.basic_amount : pay.total_amount)}</td></tr>
+            ${taxLines.map(([k, v]) => `<tr class="sub"><td>${k}</td><td class="r">${v}</td></tr>`).join('')}
+            <tr class="total"><td>${isInvoice ? 'Total' : 'Amount paid'}</td><td class="r">${money(pay.total_amount)}</td></tr></table>
         <p class="muted" style="margin-top:32px">This is a computer-generated document and does not require a signature.</p>
     </body></html>`;
 }
@@ -1119,23 +1241,13 @@ exports.downloadSubscriberDocument = async (req, res, pools) => {
         const user = userRes.rows[0];
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        const paySql = (legacy) => `
-            SELECT p.id, p.amount, p.currency, p.status, p.payment_method, p.created_at, p.transaction_date,
-                   p.razorpay_payment_id, p.razorpay_order_id,
-                   TRIM(COALESCE(mp.name${legacy ? ', sp.name' : ''}, '')) AS plan_name
-            FROM payments p
-            LEFT JOIN user_subscriptions us ON us.id = p.subscription_id
-            LEFT JOIN monthly_plans mp ON mp.id = us.monthly_plan_id
-            ${legacy ? 'LEFT JOIN subscription_plans sp ON sp.id = us.plan_id' : ''}
-            WHERE p.id = $1 AND p.user_id = $2 AND ${PAID_FILTER}`;
-        let payRes;
-        try {
-            payRes = await pools.paymentPool.query(paySql(true), [paymentId, userId]);
-        } catch {
-            payRes = await pools.paymentPool.query(paySql(false), [paymentId, userId]);
+        const row = await up.queryPaymentForUser(pools.paymentPool, userId, paymentId);
+        const pay = row ? up.serializePayment(row) : null;
+        if (!pay || !pay.is_paid) return res.status(404).json({ success: false, message: 'Paid payment not found for this user' });
+        if (doc === 'invoice' && !pay.invoice_number) {
+            // Never fabricate an invoice number: only app_invoices rows are printable as invoices.
+            return res.status(404).json({ success: false, code: 'NO_INVOICE', message: 'No application invoice exists for this payment. Download the payment receipt instead.' });
         }
-        const pay = payRes.rows[0];
-        if (!pay) return res.status(404).json({ success: false, message: 'Paid payment not found for this user' });
 
         const puppeteer = require('puppeteer');
         browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
@@ -1143,20 +1255,14 @@ exports.downloadSubscriberDocument = async (req, res, pools) => {
         await page.setContent(billingDocHtml(doc, { user, pay }), { waitUntil: 'load' });
         const pdf = await page.pdf({ format: 'A4', printBackground: true });
 
-        logPortalFlow(req, 'Plan analytics billing document downloaded', {
-            layer: 'PLAN_ANALYTICS',
-            summary: { userId, paymentId, doc },
-        });
-        const filename = `${doc}-${doc === 'invoice' ? `INV-${pay.id}` : (pay.razorpay_payment_id || pay.id)}.pdf`;
+        logPortalFlow(req, 'Plan analytics billing document downloaded', { layer: 'PLAN_ANALYTICS', summary: { userId, paymentId, doc } });
+        const safe = (v) => String(v).replace(/[^A-Za-z0-9._-]+/g, '_');
+        const filename = doc === 'invoice' ? `invoice-${safe(pay.invoice_number)}.pdf` : `receipt-${safe(pay.razorpay_payment_id || pay.payment_id)}.pdf`;
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         return res.status(200).send(Buffer.from(pdf));
     } catch (e) {
-        logger.errorWithContext('Plan analytics billing document failed', e, {
-            requestId: req.requestId,
-            layer: 'PLAN_ANALYTICS',
-            summary: { userId, paymentId, doc },
-        });
+        logger.errorWithContext('Plan analytics billing document failed', e, { requestId: req.requestId, layer: 'PLAN_ANALYTICS', summary: { userId, paymentId, doc } });
         return res.status(500).json({ success: false, message: e.message });
     } finally {
         if (browser) await browser.close().catch(() => {});

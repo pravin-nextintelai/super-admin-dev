@@ -222,7 +222,7 @@ const FinanceSubscribers = () => {
     }
     if (rangeLabel) chips.push({ key: 'date', label: `Purchased: ${rangeLabel}`, onClear: () => { setFromDate(''); setToDate(''); setPage(1); } });
     return chips;
-  }, [search, plan, topupPlanId, topupPlans, rangeLabel, tiers]);
+  }, [search, plan, topupPlanId, topupPlans, rangeLabel, tiers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDownloadDoc = async (row, doc) => {
     const paymentId = row.latest_invoice_id;
@@ -529,7 +529,6 @@ const FinanceSubscribers = () => {
           </div>
         </div>
       </div>
-
     </div>
   );
 };

@@ -36,6 +36,7 @@ const topupPlanRoutes = require('./routes/topupPlanRoutes');
 const addonPlanRoutes = require('./routes/addonPlanRoutes');
 const userAnalyticsRoutes = require('./routes/userAnalyticsRoutes');
 const planAnalyticsRoutes = require('./routes/planAnalyticsRoutes');
+const usersPlansRoutes = require('./routes/usersPlansRoutes');
 const supportQueryRoutes = require('./routes/supportQueryRoutes');
 const supportPriorityRoutes = require('./routes/supportPriorityRoutes');
 const supportWorkspaceRoutes = require('./routes/support/workspace.routes');
@@ -81,6 +82,8 @@ const { ensureContactEnquirySchema } = require('./services/contactEnquiryService
 const { ensureNewsletterSubscriberSchema } = require('./services/newsletterSubscriberService');
 const { ensureMarketingPromoSchema } = require('./services/marketingPromoService');
 const { ensureSalesReferralsSchema } = require('./services/salesReferralsService');
+const { ensureReconciliationSchema } = require('./services/reconciliationService');
+const reconciliationRoutes = require('./routes/reconciliationRoutes');
 const aiDocumentPool = require('./config/aiDocumentDB');
 const jurinexVoiceRoutes = require('./modules/jurinex-voice');
 const { attachAgentLiveTestSocket } = require('./modules/jurinex-voice/tests/agentLiveTest.socket');
@@ -174,6 +177,10 @@ app.use('/api/admin/user-analytics', userAnalyticsRoutes(pool));
 
 console.log('📌 /api/admin/plan-analytics → Read-only plan purchase analytics (Auth + Payment DBs)');
 app.use('/api/admin/plan-analytics', planAnalyticsRoutes(pool));
+console.log('📌 /api/admin/users-plans → Finance Admin Users & Plans (same handlers as plan-analytics/subscribers; GST, invoices, attribution, transactions)');
+app.use('/api/admin/users-plans', usersPlansRoutes(pool));
+console.log('📌 /api/admin/reconciliation → Razorpay ↔ Payment DB reconciliation runs, issues, audit history (Payment DB reconciliation_* tables)');
+app.use('/api/admin/reconciliation', reconciliationRoutes(pool));
 
 console.log('📌 /api/support-queries   → Using Main DB (pool)');
 app.use('/api/support-queries', supportQueryRoutes(pool));
@@ -1068,6 +1075,9 @@ const startServer = async () => {
     await initializeSupportWorkspaceSchema();
     await initializeSupportPrioritiesTable();
     await initializeAIDocumentTables();
+    await ensureReconciliationSchema(paymentPool)
+      .then(() => console.log('✅ reconciliation tables ready (Payment DB)'))
+      .catch((e) => console.error('❌ Error initializing reconciliation tables:', e.message));
     await ensureContactEnquirySchema(pool)
       .then(() => console.log('✅ contact_enquiries tables ready (Main DB)'))
       .catch((e) => console.error('❌ Error initializing contact_enquiries tables:', e.message));
