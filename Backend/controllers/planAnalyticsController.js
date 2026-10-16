@@ -963,7 +963,7 @@ exports.exportSubscribers = async (req, res, pools) => {
     if (!filters.plan && filters.status === 'free') filters.plan = 'free';
     const { planId, topupPlanId, addonPlanId, day, month, search, status, plan, from, to, view } = filters;
     const filtered = Boolean(search || plan || planId || topupPlanId || addonPlanId || month || day || status || from || to
-        || filters.ownerType || filters.ownerId || filters.code || filters.userStatus);
+        || filters.ownerType || filters.ownerId || filters.code || filters.userStatus || filters.includeDirect === false);
     const logSummary = { plan, planId, topupPlanId, addonPlanId, month, day, from, to, view, search: search || null, status, filtered,
         ownerType: filters.ownerType, ownerId: filters.ownerId, code: filters.code, userStatus: filters.userStatus };
 

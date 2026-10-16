@@ -79,8 +79,11 @@ function parseExtendedQuery(query = {}) {
     const sortByRaw = String(query.sortBy || '').trim().toLowerCase();
     const sortDirRaw = String(query.sortDir || '').trim().toLowerCase();
     const viewRaw = String(query.view || '').trim().toLowerCase();
+    const directRaw = String(query.includeDirect ?? '').trim().toLowerCase();
     return {
         ownerType: OWNER_TYPES.includes(ownerTypeRaw) ? ownerTypeRaw : null,
+        // Default true. includeDirect=0|false|no|off → referred users only (rows with a referral code).
+        includeDirect: !['0', 'false', 'no', 'off'].includes(directRaw),
         ownerId: UUID_RE.test(ownerIdRaw) ? ownerIdRaw : null,
         code: String(query.code || query.referralCode || '').trim().slice(0, 64) || null,
         userStatus: USER_STATUSES.includes(userStatusRaw) ? userStatusRaw : null,
@@ -134,6 +137,7 @@ function buildUsersWhere(filters, extra, tierSql) {
     if (filters.ownerType === 'DIRECT') where.push('rc.id IS NULL');
     else if (filters.ownerType === 'INTERNAL') where.push('rc.id IS NOT NULL AND so.internal = true');
     else if (filters.ownerType === 'OUTSOURCED') where.push('rc.id IS NOT NULL AND so.internal = false');
+    else if (filters.includeDirect === false) where.push('rc.id IS NOT NULL');
     if (filters.ownerId) where.push(`so.id = ${push(filters.ownerId)}::uuid`);
     if (filters.code) where.push(`rc.code ILIKE ${push(`%${escapeLike(filters.code)}%`)} ESCAPE '\\'`);
     if (filters.userStatus) where.push(`${USER_STATUS_SQL} = ${push(filters.userStatus)}`);

@@ -65,7 +65,8 @@ async function runWith(body, clientFactory) {
 
     await test('date range validation', () => {
         assert.ok(recon.parseRange({ startDate: '2026-13-01', endDate: '2026-10-01' }).error);
-        assert.ok(recon.parseRange({ startDate: '2026-01-01', endDate: '2026-06-30' }).error, 'range > 92 days rejected');
+        assert.ok(!recon.parseRange({ startDate: '2026-01-01', endDate: '2026-06-30' }).error, 'six-month range (181 days) accepted');
+        assert.ok(recon.parseRange({ startDate: '2026-01-01', endDate: '2026-07-31' }).error, 'range > 184 days rejected');
         const r = recon.parseRange({ startDate: '2026-10-12', endDate: '2026-10-12' });
         assert.strictEqual(r.from.toISOString(), '2026-10-11T18:30:00.000Z');
         assert.strictEqual(r.toExclusive.toISOString(), '2026-10-12T18:30:00.000Z');

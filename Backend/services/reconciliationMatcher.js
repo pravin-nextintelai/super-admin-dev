@@ -112,14 +112,18 @@ function reconcile({ razorpay = [], db = [], range, flags = {}, policy = {} }) {
     const matched = [];
     const summary = {
         razorpay: { total: razorpay.length, paid: 0, pending: 0, failed: 0, refunded_full: 0, refunded_partial: 0, amount_paid_paise: 0, amount_refunded_paise: 0 },
-        db: { total: db.length, paid: 0, pending: 0, failed: 0, refunded: 0, amount_paid_paise: 0, by_table: {} },
+        // Counts cover rows inside the strict window only; `padded` rows (±1 day) are loaded just so
+        // boundary payments can still match and are reported separately.
+        db: { total: 0, paid: 0, pending: 0, failed: 0, refunded: 0, amount_paid_paise: 0, by_table: {}, padded: 0, loaded: db.length },
         matched: 0,
         issues: { total: 0, open: 0, by_type: {}, by_severity: {} },
         flags: { razorpayComplete, dbComplete, missingReported: canReportMissing },
     };
 
     db.forEach((row) => {
+        if (!inRange(row.purchased_at, range.from, range.toExclusive)) { summary.db.padded += 1; return; }
         const norm = normalizeDbStatus(row.status, row.amount_refunded_paise, row.amount_paise);
+        summary.db.total += 1;
         summary.db[norm === 'unknown' ? 'pending' : norm] += 1;
         if (norm === 'paid') summary.db.amount_paid_paise += row.amount_paise || 0;
         summary.db.by_table[row.source_table] = (summary.db.by_table[row.source_table] || 0) + 1;

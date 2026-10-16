@@ -47,9 +47,10 @@ const test = async (name, fn) => { await fn(); passed += 1; console.log(`  ✓ $
 
     await test('parseExtendedQuery validates owner type, uuid, status, sort and view', () => {
         const q = up.parseExtendedQuery({ ownerType: 'internal', ownerId: 'not-a-uuid', userStatus: 'ACTIVE', sortBy: 'total_amount', sortDir: 'ASC', view: 'Transactions', code: ' NEXI-1 ' });
-        assert.deepStrictEqual(q, { ownerType: 'INTERNAL', ownerId: null, code: 'NEXI-1', userStatus: 'active', sortBy: 'total_amount', sortDir: 'asc', view: 'transactions' });
+        assert.deepStrictEqual(q, { ownerType: 'INTERNAL', includeDirect: true, ownerId: null, code: 'NEXI-1', userStatus: 'active', sortBy: 'total_amount', sortDir: 'asc', view: 'transactions' });
+        assert.strictEqual(up.parseExtendedQuery({ includeDirect: '0' }).includeDirect, false, 'includeDirect=0 → referred only');
         const d = up.parseExtendedQuery({});
-        assert.deepStrictEqual(d, { ownerType: null, ownerId: null, code: null, userStatus: null, sortBy: 'joined', sortDir: 'desc', view: 'users' });
+        assert.deepStrictEqual(d, { ownerType: null, includeDirect: true, ownerId: null, code: null, userStatus: null, sortBy: 'joined', sortDir: 'desc', view: 'users' });
     });
 
     await test('inclusive IST day range → exclusive UTC boundary', () => {

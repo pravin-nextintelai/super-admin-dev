@@ -9,6 +9,7 @@ import UserManagement from './pages/dashboard/UserManagement';
 import UserAnalytics from './pages/dashboard/UserAnalytics';
 import PlanAnalytics from './pages/dashboard/PlanAnalytics';
 import FinanceSubscribers from './pages/dashboard/FinanceSubscribers';
+import FinanceReconciliation from './pages/dashboard/FinanceReconciliation';
 import AdminManagement from './components/auth/Admins/AdminManagement';
 import ContentManagement from './pages/dashboard/ContentManagement';
 import TemplateManagement from './pages/dashboard/TemplateManagement/index';
@@ -140,6 +141,7 @@ function App() {
             <Route path="subscriptions" element={<RequireRole allow={['account-admin', 'finance-admin']}><SubscriptionManagement /></RequireRole>} />
             <Route path="subscriptions/analytics" element={<RequireRole allow={['account-admin', 'finance-admin']}><PlanAnalytics /></RequireRole>} />
             <Route path="subscriptions/users" element={<RequireRole allow={['account-admin', 'finance-admin']}><FinanceSubscribers /></RequireRole>} />
+            <Route path="subscriptions/reconciliation" element={<RequireRole allow={['account-admin', 'finance-admin']}><FinanceReconciliation /></RequireRole>} />
             <Route path="prompts" element={<RequireRole allow={[]}><PromptManagement /></RequireRole>} />
             <Route path="agent-prompts" element={<RequireRole allow={[]}><AgentList /></RequireRole>} />
             <Route path="system-prompts" element={<RequireRole allow={[]}><SystemPromptManagement /></RequireRole>} />

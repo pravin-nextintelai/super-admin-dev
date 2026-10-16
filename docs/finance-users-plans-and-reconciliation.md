@@ -101,7 +101,7 @@ Same handlers also serve `/api/admin/plan-analytics/subscribers…` for the exis
 
 | Method & path | Description |
 |---|---|
-| `GET /` | Paginated list. Query: `page`, `pageSize` (≤100), `search` (name/email/id), `plan` (free\|pro\|plus\|lite\|enterprise), `topupPlanId`, `addonPlanId`, `status` (subscription status), `ownerType` (INTERNAL\|OUTSOURCED\|DIRECT), `ownerId` (uuid), `code` (referral code, partial), `userStatus` (new\|active\|inactive\|blocked\|pending), `from`, `to` (YYYY-MM-DD IST, **both inclusive**), `sortBy` (joined\|username\|email\|plan\|user_status\|sales_owner\|purchase_date\|total_amount), `sortDir`, `view` (users\|transactions). Returns `rows[]`, `total`, `page`, `pageSize`, `view`, `sortBy`, `sortDir`, `filters` (facets). |
+| `GET /` | Paginated list. Query: `page`, `pageSize` (≤100), `search` (name/email/id), `plan` (free\|pro\|plus\|lite\|enterprise), `topupPlanId`, `addonPlanId`, `status` (subscription status), `ownerType` (INTERNAL\|OUTSOURCED\|DIRECT), `includeDirect` (default 1; `0` = only users who came through a referral code), `ownerId` (uuid), `code` (referral code, partial), `userStatus` (new\|active\|inactive\|blocked\|pending), `from`, `to` (YYYY-MM-DD IST, **both inclusive**), `sortBy` (joined\|username\|email\|plan\|user_status\|sales_owner\|purchase_date\|total_amount), `sortDir`, `view` (users\|transactions). Returns `rows[]`, `total`, `page`, `pageSize`, `view`, `sortBy`, `sortDir`, `filters` (facets). |
 | `GET /filters` | Facets: plans, top-up plans, add-on plans, tiers, sales owners, owner types, user statuses, sort fields. |
 | `GET /export` | CSV of **all** rows matching the same query (not just the page). UTF-8 BOM, CRLF, quoted, formula-injection guarded. Columns: Username, Email, Sales Owner, Owner Type, Referral Code, User Status, Plan, Basic/CGST/SGST/IGST/Total (INR), Purchase Date (IST), Payment Status, Invoice Number, Razorpay Payment ID, Razorpay Order ID, Razorpay Receipt. |
 | `GET /:userId` | Profile + attribution + firm, `current_subscription`, `subscriptions[]`, `payments[]` (every status, full GST + refs), `latest_payment`, `refunds[]`, `topups[]`, `addons[]`, `totals`. |
@@ -118,11 +118,13 @@ Transactions-view rows are `{ …userFields, plan_name, payment }`.
 ### Reconciliation — `/api/admin/reconciliation` (roles: super-admin, finance-admin, account-admin)
 | Method & path | Description |
 |---|---|
-| `POST /runs` `{ startDate, endDate }` | Create + start a run (IST days, inclusive; ≤ 92 days; not in the future). `202` with the run. `409` if the same range is already queued/running. |
+| `POST /runs` `{ startDate, endDate }` | Create + start a run (IST days, inclusive; ≤ `RECON_MAX_RANGE_DAYS` days, default 184 ≈ 6 months; not in the future). `202` with the run. `409` if the same range is already queued/running. |
 | `GET /runs?page&pageSize&status` | Runs, newest first, with `open_issues` / `total_issues`. |
 | `GET /runs/:runId` | Run + `summary` + `issue_counts[]` + `events[]` (execution log). |
 | `GET /runs/:runId/issues?status&type&severity&search&page&pageSize` | Issues ordered by severity. |
 | `GET /runs/:runId/export` | CSV of the run's issues. |
+| `GET /runs/:runId/comparison?status&search&page&pageSize` | Side-by-side table: every Payment-DB row of the (±1-day padded) window on the left, every Razorpay payment of the run's snapshot on the right, paired by `razorpay_payment_id`. Each row has `status` (`matched`, `mismatch`, `db_only`, `razorpay_only`, `no_reference`, `outside_window`), field-level `differences[]`, human `reasons[]` and the run's stored `issues[]`. DB rows are read live; Razorpay rows come from the snapshot. `counts` gives totals per status. |
+| `GET /runs/:runId/comparison/export` | The same comparison as CSV. |
 | `POST /runs/:runId/retry` | New attempt for a `failed` / `partial` run (`attempt + 1`, `retry_of_run_id`). |
 | `GET /issues/:issueId` | Issue + Razorpay snapshot/order payload + history. |
 | `PATCH /issues/:issueId/resolve` `{ reason }` | Reason ≥ 5 chars **required**; records admin id/email, timestamp, previous → new state. `409` if already resolved. |
@@ -148,6 +150,7 @@ Matching: Razorpay payments created in `[startDate 00:00 IST, endDate+1 00:00 IS
 | `RAZORPAY_PAGE_SIZE` | no | ≤100, default 100 |
 | `RAZORPAY_MIN_INTERVAL_MS` | no | soft rate limit between calls, default 120 |
 | `RECON_INVOICE_REQUIRED_SINCE` | no | `YYYY-MM-DD` (IST). Plan payments on/after this day must have an app invoice. Default: earliest `app_invoices.issued_at`; no invoices ⇒ never required. |
+| `RECON_MAX_RANGE_DAYS` | no | Longest range one run may cover, in IST days. Default `184` (about 6 months). |
 | `RECON_FETCH_ORDERS` | no | `true` to also fetch Razorpay order details for unmatched / order-mismatched payments (extra API calls, ≤200 per run). |
 
 Runs execute in-process in the background (`setImmediate`) and survive only while the server process does; a run interrupted by a restart stays `running` and can be re-created for the same range. No separate worker/queue is required.
@@ -211,7 +214,7 @@ Results on 2026-10-15 (live Auth_DB + Payment_DB): **41 / 41 passed** — users 
 | Database-only transaction | matcher "DB-only paid row inside the window" |
 | Duplicate payment reference | matcher + service tampered run |
 | Incorrect amount or currency | matcher (critical `AMOUNT_MISMATCH`, `CURRENCY_MISMATCH`); service tampered run |
-| Custom date-range boundaries | users_plans "inclusive IST day → exclusive UTC"; live "`to` day fully included"; service `parseRange` (swap, >92 days, future) |
+| Custom date-range boundaries | users_plans "inclusive IST day → exclusive UTC"; live "`to` day fully included"; service `parseRange` (swap, > max days, future) |
 | Pagination and filtered CSV export | HTTP smoke (`export?from&to` → 4 lines; transactions export); service runs/issues pagination |
 | Unauthorized admin access | HTTP smoke: no token → 401; support-admin → 403 on both routers |
 | API timeout, pagination failure, retry | client tests (timeouts exhausted → `RazorpayApiError`, 429 retried, exact page boundary); service "auth failure → partial, no missing-type issues, retry = attempt 2"; live run #10 recorded the real 401 and run #11 was its retry |

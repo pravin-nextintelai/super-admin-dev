@@ -1,4 +1,4 @@
-const express = require('express');
+   const express = require('express');
 
 const paymentPool = require('../config/payment_DB');
 const { protect, authorize } = require('../middleware/authMiddleware');
@@ -76,6 +76,30 @@ module.exports = (authPool) => {
       res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
       return res.status(200).send(out.csv);
     } catch (e) { return fail(res, req, e, 'run export'); }
+  });
+
+  // Side-by-side comparison: every DB row (left) and Razorpay payment (right) of the run, with reasons.
+  router.get('/runs/:runId/comparison', async (req, res) => {
+    const id = intParam(req.params.runId);
+    if (!id) return res.status(400).json({ success: false, message: 'Invalid run id' });
+    try {
+      const data = await recon.compareRun(paymentPool, id, req.query);
+      if (!data) return res.status(404).json({ success: false, message: 'Run not found' });
+      return res.json({ success: true, data });
+    } catch (e) { return fail(res, req, e, 'comparison'); }
+  });
+
+  router.get('/runs/:runId/comparison/export', async (req, res) => {
+    const id = intParam(req.params.runId);
+    if (!id) return res.status(400).json({ success: false, message: 'Invalid run id' });
+    try {
+      const out = await recon.exportComparison(paymentPool, id);
+      if (!out) return res.status(404).json({ success: false, message: 'Run not found' });
+      logPortalFlow(req, 'Reconciliation comparison exported', { layer: 'RECONCILIATION', summary: { runId: id } });
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+      return res.status(200).send(out.csv);
+    } catch (e) { return fail(res, req, e, 'comparison export'); }
   });
 
   router.post('/runs/:runId/retry', async (req, res) => {

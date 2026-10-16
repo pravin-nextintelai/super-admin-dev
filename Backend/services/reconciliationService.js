@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const { istDayStart, istDayEndExclusive } = require('../utils/time');
 const { createRazorpayClient, normalizeRazorpayPayment, RazorpayApiError } = require('./razorpayClient');
-const { reconcile, ISSUE_TYPES, SEVERITIES } = require('./reconciliationMatcher');
+const { reconcile, ISSUE_TYPES, SEVERITIES, normalizeDbStatus, normalizeRzStatus } = require('./reconciliationMatcher');
 const { toPaiseInt, rupeesToPaise, paiseToRupeeString } = require('../utils/money');
 const logger = require('../config/logger');
 
@@ -41,6 +41,12 @@ const dateOnly = (v) => {
     return String(v).slice(0, 10);
 };
 
+/** Longest range one run may cover, in IST days. RECON_MAX_RANGE_DAYS overrides; default 184 (≈ 6 months). */
+function maxRangeDays() {
+    const n = Number(process.env.RECON_MAX_RANGE_DAYS);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 184;
+}
+
 function parseRange(body = {}) {
     const start = String(body.startDate || body.start_date || body.from || '').trim();
     const end = String(body.endDate || body.end_date || body.to || '').trim();
@@ -50,7 +56,8 @@ function parseRange(body = {}) {
     const toExclusive = istDayEndExclusive(b);
     if (!from || !toExclusive) return { error: 'Invalid date' };
     if (toExclusive.getTime() > Date.now() + PAD_MS) return { error: 'endDate cannot be in the future' };
-    if ((toExclusive - from) / PAD_MS > 92) return { error: 'Range too large: reconcile at most 92 days per run' };
+    const maxDays = maxRangeDays();
+    if ((toExclusive - from) / PAD_MS > maxDays) return { error: `Range too large: reconcile at most ${maxDays} days per run` };
     return {
         range_start: a, range_end: b, from, toExclusive,
         fromUnix: Math.floor(from.getTime() / 1000),
@@ -482,8 +489,177 @@ async function exportRun(payPool, runId) {
     return { run, csv, filename: `reconciliation-run-${runId}-${run.range_start}_to_${run.range_end}.csv` };
 }
 
+// ── Side-by-side comparison (DB row ↔ Razorpay payment) ─────────────────────
+const COMPARISON_STATUSES = ['matched', 'mismatch', 'db_only', 'razorpay_only', 'no_reference', 'outside_window'];
+
+const fmtRs = (paise) => (paise == null ? null : paiseToRupeeString(paise));
+const compactDb = (r) => ({
+    source_table: r.source_table, source_id: r.source_id, kind: r.kind, user_id: r.user_id, plan_name: r.plan_name,
+    status: r.status, amount_paise: r.amount_paise, amount: fmtRs(r.amount_paise), currency: r.currency,
+    razorpay_payment_id: r.razorpay_payment_id, razorpay_order_id: r.razorpay_order_id,
+    refund_status: r.refund_status, amount_refunded_paise: r.amount_refunded_paise || 0, amount_refunded: fmtRs(r.amount_refunded_paise || 0),
+    purchased_at: iso(r.purchased_at), has_invoice: Boolean(r.has_invoice), tax: r.tax || null,
+});
+const compactRz = (p) => ({
+    razorpay_payment_id: p.razorpay_payment_id, razorpay_order_id: p.razorpay_order_id, status: p.status, captured: p.captured,
+    amount_paise: p.amount_paise, amount: fmtRs(p.amount_paise), currency: p.currency, method: p.method, email: p.email, contact: p.contact,
+    refund_status: p.refund_status, amount_refunded_paise: p.amount_refunded_paise || 0, amount_refunded: fmtRs(p.amount_refunded_paise || 0),
+    razorpay_created_at: iso(p.razorpay_created_at), error_code: p.error_code, error_description: p.error_description,
+});
+
+/**
+ * Every DB row of the run's (padded) window on the left and every Razorpay payment of the run's
+ * snapshot on the right, paired by razorpay_payment_id, with field-level differences and the run's
+ * stored issues as reasons. DB rows are read live (the run does not snapshot them); Razorpay rows
+ * come from the snapshot taken during the run.
+ */
+async function compareRun(payPool, runId, q = {}) {
+    const run = await getRun(payPool, runId);
+    if (!run) return null;
+    const from = new Date(run.from_ts);
+    const toExclusive = new Date(run.to_ts_exclusive);
+    const [snap, dbRows, issuesRes] = await Promise.all([
+        payPool.query(`SELECT payload FROM reconciliation_razorpay_payments WHERE run_id = $1 ORDER BY razorpay_created_at ASC, razorpay_payment_id ASC`, [runId]),
+        loadDbRows(payPool, from, toExclusive),
+        payPool.query(`SELECT * FROM reconciliation_issues WHERE run_id = $1 ORDER BY id ASC`, [runId]),
+    ]);
+    const razorpay = snap.rows.map((r) => normalizeRazorpayPayment(typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload));
+    const issues = issuesRes.rows.map(serializeIssue);
+    const issuesByPayment = new Map();
+    const issuesBySource = new Map();
+    issues.forEach((i) => {
+        if (i.razorpay_payment_id) issuesByPayment.set(i.razorpay_payment_id, [...(issuesByPayment.get(i.razorpay_payment_id) || []), i]);
+        if (i.source_table && i.source_id != null) {
+            const k = `${i.source_table}#${i.source_id}`;
+            issuesBySource.set(k, [...(issuesBySource.get(k) || []), i]);
+        }
+    });
+    const issueRef = (i) => ({ id: i.id, issue_type: i.issue_type, severity: i.severity, status: i.status, message: i.message });
+    const uniqIssues = (list) => { const seen = new Set(); return list.filter((i) => !seen.has(i.id) && seen.add(i.id)).map(issueRef); };
+    const inWindow = (row) => row.purchased_at && new Date(row.purchased_at) >= from && new Date(row.purchased_at) < toExclusive;
+    const windowLabel = `${run.range_start} → ${run.range_end} (IST)`;
+
+    const dbByPayment = new Map();
+    dbRows.forEach((r) => { if (r.razorpay_payment_id) dbByPayment.set(r.razorpay_payment_id, [...(dbByPayment.get(r.razorpay_payment_id) || []), r]); });
+
+    const out = [];
+    const usedDb = new Set();
+    const diffOf = (row, p) => {
+        const d = [];
+        if ((row.amount_paise ?? null) !== (p.amount_paise ?? null)) d.push({ field: 'amount', db: fmtRs(row.amount_paise), razorpay: fmtRs(p.amount_paise) });
+        if (String(row.currency || '').toUpperCase() !== String(p.currency || '').toUpperCase()) d.push({ field: 'currency', db: row.currency, razorpay: p.currency });
+        const dbNorm = normalizeDbStatus(row.status, row.amount_refunded_paise, row.amount_paise);
+        const rzNorm = normalizeRzStatus(p);
+        if (dbNorm !== rzNorm) d.push({ field: 'status', db: `${row.status} (${dbNorm})`, razorpay: `${p.status} (${rzNorm})` });
+        if (row.razorpay_order_id && p.razorpay_order_id && row.razorpay_order_id !== p.razorpay_order_id) d.push({ field: 'order_id', db: row.razorpay_order_id, razorpay: p.razorpay_order_id });
+        if ((row.amount_refunded_paise || 0) !== (p.amount_refunded_paise || 0)) d.push({ field: 'refunded', db: fmtRs(row.amount_refunded_paise || 0), razorpay: fmtRs(p.amount_refunded_paise || 0) });
+        if (row.tax && row.tax.total != null) {
+            const sum = (row.tax.basic || 0) + (row.tax.cgst || 0) + (row.tax.sgst || 0) + (row.tax.igst || 0);
+            if (sum !== row.tax.total || row.tax.total !== row.amount_paise) d.push({ field: 'gst_breakdown', db: `${fmtRs(row.tax.basic)} + ${fmtRs(row.tax.cgst)} + ${fmtRs(row.tax.sgst)} + ${fmtRs(row.tax.igst)} = ${fmtRs(sum)}`, razorpay: fmtRs(p.amount_paise) });
+        }
+        return d;
+    };
+
+    razorpay.forEach((p) => {
+        const rows = dbByPayment.get(p.razorpay_payment_id) || [];
+        const related = uniqIssues([...(issuesByPayment.get(p.razorpay_payment_id) || [])]);
+        if (!rows.length) {
+            const rzNorm = normalizeRzStatus(p);
+            const reasons = [rzNorm === 'paid' || rzNorm === 'refunded'
+                ? `Razorpay shows this payment as ${p.status} but no database row references ${p.razorpay_payment_id}.`
+                : `Razorpay payment is ${p.status}${p.error_description ? ` (${p.error_description})` : ''}; no database row was expected to be paid.`];
+            if (!run.summary?.flags?.missingReported) reasons.push('Missing-side checks were skipped for this run because one side did not load completely.');
+            out.push({ key: `rz:${p.razorpay_payment_id}`, status: 'razorpay_only', db: null, razorpay: compactRz(p), differences: [], reasons, issues: related });
+            return;
+        }
+        rows.forEach((row, idx) => {
+            usedDb.add(row);
+            const differences = diffOf(row, p);
+            const rowIssues = uniqIssues([...related, ...(issuesBySource.get(`${row.source_table}#${row.source_id}`) || [])]);
+            const reasons = [];
+            if (rows.length > 1) reasons.push(`Duplicate reference: ${rows.length} database rows point at ${p.razorpay_payment_id} (this is row ${idx + 1} of ${rows.length}).`);
+            differences.forEach((d) => reasons.push(`${d.field.replace(/_/g, ' ')} differs: database ${d.db ?? '—'} vs Razorpay ${d.razorpay ?? '—'}.`));
+            rowIssues.forEach((i) => { if (!reasons.some((r) => r.includes(i.message))) reasons.push(`${i.issue_type.replace(/_/g, ' ')} (${i.severity}${i.status === 'resolved' ? ', resolved' : ''}): ${i.message}`); });
+            if (!inWindow(row)) reasons.push(`Database row is dated outside ${windowLabel}; it matched a Razorpay payment inside the window (boundary timing).`);
+            const status = differences.length || rows.length > 1 || rowIssues.some((i) => i.status === 'open') ? 'mismatch' : 'matched';
+            if (status === 'matched') reasons.unshift('Payment id, amount, currency, status, order id and refunds agree.');
+            out.push({ key: `pair:${row.source_table}#${row.source_id}:${p.razorpay_payment_id}`, status, db: compactDb(row), razorpay: compactRz(p), differences, reasons, issues: rowIssues });
+        });
+    });
+
+    dbRows.forEach((row) => {
+        if (usedDb.has(row)) return;
+        const rowIssues = uniqIssues([...(issuesBySource.get(`${row.source_table}#${row.source_id}`) || []), ...(row.razorpay_payment_id ? issuesByPayment.get(row.razorpay_payment_id) || [] : [])]);
+        const norm = normalizeDbStatus(row.status, row.amount_refunded_paise, row.amount_paise);
+        let status; const reasons = [];
+        if (!inWindow(row)) {
+            status = 'outside_window';
+            reasons.push(`Purchased ${iso(row.purchased_at)?.slice(0, 10) || '—'}, outside ${windowLabel}. Loaded only for boundary matching (±1 day); Razorpay was not queried for this date, so it is not compared.`);
+        } else if (!row.razorpay_payment_id) {
+            status = 'no_reference';
+            reasons.push(norm === 'paid' || norm === 'refunded'
+                ? `Database row is ${row.status} but has no razorpay_payment_id, so it cannot be matched to any Razorpay payment.`
+                : `Database row is ${row.status} and has no razorpay_payment_id yet (checkout not completed); nothing to compare.`);
+        } else {
+            status = 'db_only';
+            reasons.push(norm === 'paid' || norm === 'refunded'
+                ? `Database row is ${row.status} and references ${row.razorpay_payment_id}, but Razorpay returned no payment with that id for this window.`
+                : `Database row is ${row.status}; Razorpay returned no payment with id ${row.razorpay_payment_id} for this window.`);
+            if (!run.summary?.flags?.missingReported) reasons.push('Missing-side checks were skipped for this run because one side did not load completely.');
+        }
+        rowIssues.forEach((i) => reasons.push(`${i.issue_type.replace(/_/g, ' ')} (${i.severity}${i.status === 'resolved' ? ', resolved' : ''}): ${i.message}`));
+        out.push({ key: `db:${row.source_table}#${row.source_id}`, status, db: compactDb(row), razorpay: null, differences: [], reasons, issues: rowIssues });
+    });
+
+    const order = { mismatch: 0, db_only: 1, razorpay_only: 2, no_reference: 3, matched: 4, outside_window: 5 };
+    const when = (r) => new Date(r.db?.purchased_at || r.razorpay?.razorpay_created_at || 0).getTime();
+    out.sort((a, b) => order[a.status] - order[b.status] || when(b) - when(a));
+
+    const counts = Object.fromEntries(COMPARISON_STATUSES.map((s) => [s, 0]));
+    out.forEach((r) => { counts[r.status] += 1; });
+
+    let rows = out;
+    if (q.status && COMPARISON_STATUSES.includes(q.status)) rows = rows.filter((r) => r.status === q.status);
+    if (q.search) {
+        const s = String(q.search).trim().toLowerCase();
+        rows = rows.filter((r) => [r.db?.razorpay_payment_id, r.db?.razorpay_order_id, r.razorpay?.razorpay_payment_id, r.razorpay?.razorpay_order_id, r.razorpay?.email,
+            r.db?.plan_name, r.db?.user_id != null ? `#${r.db.user_id}` : null, r.db?.user_id, `${r.db?.source_table || ''}#${r.db?.source_id ?? ''}`]
+            .some((v) => v != null && String(v).toLowerCase().includes(s)));
+    }
+    const pageSize = Math.min(200, Math.max(1, Number(q.pageSize) || 50));
+    const page = Math.max(1, Number(q.page) || 1);
+    const total = rows.length;
+    return {
+        run: { id: run.id, range_start: run.range_start, range_end: run.range_end, status: run.status, flags: run.summary?.flags || {} },
+        counts: { ...counts, all: out.length, db_rows: dbRows.length, razorpay_payments: razorpay.length },
+        db_loaded_at: new Date().toISOString(),
+        rows: rows.slice((page - 1) * pageSize, page * pageSize),
+        total, page, pageSize,
+    };
+}
+
+async function exportComparison(payPool, runId) {
+    const data = await compareRun(payPool, runId, { pageSize: 200 });
+    if (!data) return null;
+    // Re-run without paging to get every row.
+    const all = await compareRun(payPool, runId, { pageSize: 200, page: 1 });
+    const pages = Math.ceil(all.total / 200);
+    let rows = [...all.rows];
+    for (let p = 2; p <= pages; p += 1) rows = rows.concat((await compareRun(payPool, runId, { pageSize: 200, page: p })).rows);
+    const header = ['Result', 'DB table', 'DB id', 'DB user', 'DB plan', 'DB status', 'DB amount (INR)', 'DB currency', 'DB refunded (INR)', 'DB payment id', 'DB order id', 'DB purchased at',
+        'Razorpay payment id', 'Razorpay order id', 'Razorpay status', 'Razorpay amount (INR)', 'Razorpay currency', 'Razorpay refunded (INR)', 'Razorpay method', 'Razorpay email', 'Razorpay created at',
+        'Differences', 'Reason', 'Issue ids'];
+    const label = (s) => ({ matched: 'Matched', mismatch: 'Mismatch', db_only: 'DB only', razorpay_only: 'Razorpay only', no_reference: 'No Razorpay reference', outside_window: 'Outside window (±1 day)' }[s] || s);
+    const lines = rows.map((r) => [label(r.status), r.db?.source_table, r.db?.source_id, r.db?.user_id, r.db?.plan_name, r.db?.status, r.db?.amount, r.db?.currency, r.db?.amount_refunded, r.db?.razorpay_payment_id, r.db?.razorpay_order_id, r.db?.purchased_at,
+        r.razorpay?.razorpay_payment_id, r.razorpay?.razorpay_order_id, r.razorpay?.status, r.razorpay?.amount, r.razorpay?.currency, r.razorpay?.amount_refunded, r.razorpay?.method, r.razorpay?.email, r.razorpay?.razorpay_created_at,
+        r.differences.map((d) => `${d.field}: db ${d.db ?? '—'} / razorpay ${d.razorpay ?? '—'}`).join(' | '), r.reasons.join(' '), r.issues.map((i) => i.id).join(' ')].map(csvCell).join(','));
+    const csv = `﻿${[header.map(csvCell).join(','), ...lines].join('\r\n')}\r\n`;
+    return { csv, filename: `reconciliation-comparison-run-${runId}-${data.run.range_start}_to_${data.run.range_end}.csv` };
+}
+
 module.exports = {
     ensureReconciliationSchema, parseRange, createRun, executeRun, retryRun, listRuns, getRun,
     listIssues, getIssue, issueHistory, transitionIssue, exportRun, loadDbRows, invoiceRequiredSince,
+    compareRun, exportComparison, COMPARISON_STATUSES,
     serializeRun, serializeIssue, RUN_STATUSES,
 };

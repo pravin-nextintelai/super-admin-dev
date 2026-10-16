@@ -31,6 +31,7 @@ import {
   Contact,
   Activity,
   Ticket,
+  Scale,
 } from 'lucide-react';
 import { createDebugLogger } from '../../utils/debugLogger';
 import { SALES_REFERRALS_TEXT } from '../../features/sales-referrals/constants/salesReferrals.text';
@@ -236,6 +237,12 @@ const Sidebar = ({ isOpen, userRole, toggleSidebar }) => {
       name: 'Users & Plans',
       path: '/dashboard/subscriptions/users',
       icon: Contact,
+      roles: ['super-admin', 'account-admin', 'finance-admin']
+    },
+    {
+      name: 'Reconciliation',
+      path: '/dashboard/subscriptions/reconciliation',
+      icon: Scale,
       roles: ['super-admin', 'account-admin', 'finance-admin']
     },
     {
