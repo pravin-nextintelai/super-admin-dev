@@ -133,8 +133,10 @@ function serializeCode(row, { withOwner = false } = {}) {
     replacedByCode: row.replaced_by_code ?? null,
     createdAt: ts(row.created_at),
     updatedAt: ts(row.updated_at),
+    lastEmailedAt: ts(row.last_emailed_at),
+    lastEmailedTo: row.last_emailed_to ?? null,
   };
-  if (withOwner) out.owner = { id: row.owner_id, name: row.owner_name, internal: Boolean(row.owner_internal) };
+  if (withOwner) out.owner = { id: row.owner_id, name: row.owner_name, internal: Boolean(row.owner_internal), email: row.owner_email ?? null };
   return out;
 }
 
@@ -156,11 +158,14 @@ function serializeOwner(row, codes, names) {
     active: Boolean(c.active),
     replacedByCode: c.replaced_by_code ?? null,
     createdAt: ts(c.created_at),
+    lastEmailedAt: ts(c.last_emailed_at),
+    lastEmailedTo: c.last_emailed_to ?? null,
   }));
   return {
     id: row.id,
     name: row.name,
     internal: Boolean(row.internal),
+    email: row.email ?? null,
     notes: row.notes ?? null,
     createdAt: ts(row.created_at),
     createdBy: adminRef(row.created_by, names),
@@ -175,7 +180,7 @@ function serializeOwner(row, codes, names) {
 
 const CODE_SELECT = `
   SELECT rc.*, rep.code AS replaced_by_code,
-         so.name AS owner_name, so.internal AS owner_internal
+         so.name AS owner_name, so.internal AS owner_internal, so.email AS owner_email
   FROM referral_codes rc
   JOIN sales_owners so ON so.id = rc.owner_id
   LEFT JOIN referral_codes rep ON rep.id = rc.replaced_by_code_id`;
@@ -261,9 +266,9 @@ async function createOwner(pool, input, actorId) {
   try {
     await client.query('BEGIN');
     const ins = await client.query(
-      `INSERT INTO sales_owners (name, internal, notes, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $4) RETURNING id`,
-      [name, Boolean(input.internal), notes, actorId]
+      `INSERT INTO sales_owners (name, internal, notes, email, created_by, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`,
+      [name, Boolean(input.internal), notes, normalizeEmail(input.email), actorId]
     );
     ownerId = ins.rows[0].id;
     for (const c of codes) {
@@ -285,6 +290,13 @@ async function createOwner(pool, input, actorId) {
   return getOwner(pool, ownerId);
 }
 
+/** Owner contact email: trimmed, lower-cased, null when blank. Format is validated by the controller. */
+function normalizeEmail(raw) {
+  if (raw === undefined || raw === null) return null;
+  const s = String(raw).trim().toLowerCase();
+  return s ? s : null;
+}
+
 function normalizeLabelLong(raw) {
   if (raw === undefined || raw === null) return null;
   const s = String(raw).trim();
@@ -297,14 +309,15 @@ async function updateOwner(pool, ownerId, input, actorId) {
   if (!owner) throw notFoundOwner();
   const name = String(input.name).trim();
   const notes = input.notes === undefined ? owner.notes : normalizeLabelLong(input.notes);
+  const email = input.email === undefined ? owner.email : normalizeEmail(input.email);
 
   const clash = await pool.query('SELECT id FROM sales_owners WHERE lower(name) = lower($1) AND id <> $2', [name, ownerId]);
   if (clash.rows.length) throw new ApiError(409, 'SALES_OWNER_NAME_TAKEN', 'A sales owner with this name already exists.', { field: 'name', value: name });
 
   try {
     await pool.query(
-      `UPDATE sales_owners SET name = $1, internal = $2, notes = $3, updated_by = $4, updated_at = NOW() WHERE id = $5`,
-      [name, Boolean(input.internal), notes, actorId, ownerId]
+      `UPDATE sales_owners SET name = $1, internal = $2, notes = $3, email = $4, updated_by = $5, updated_at = NOW() WHERE id = $6`,
+      [name, Boolean(input.internal), notes, email, actorId, ownerId]
     );
   } catch (err) {
     const mapped = mapUniqueViolation(err);
@@ -596,6 +609,13 @@ async function setTenantReferral(pool, tenantId, input, actorId) {
 
     const prev = await client.query(`SELECT code_id, source FROM ${t.table} WHERE ${t.key} = $1 FOR UPDATE`, [key.id]);
     const previous = prev.rows[0] || null;
+    // Attribution is write-once: a code can be assigned to a direct signup, but never replaced afterwards.
+    if (previous && previous.code_id) {
+      const current = await loadCode(client, previous.code_id);
+      throw new ApiError(409, 'REFERRAL_ALREADY_SET',
+        `A referral code (${current ? current.code : 'already assigned'}) is attached to this ${key.tenantType === 'FIRM' ? 'workspace' : 'user'} and cannot be changed.`,
+        { codeId: previous.code_id, code: current ? current.code : null, source: previous.source });
+    }
 
     await client.query(
       `INSERT INTO ${t.table} (${t.key}, code_id, source, signed_up_at, set_by, set_at, reason)

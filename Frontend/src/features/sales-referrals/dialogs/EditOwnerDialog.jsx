@@ -15,13 +15,14 @@ const EditOwnerDialog = ({ open, onClose, owner, existingNames = [], onSaved }) 
   const [name, setName] = useState('');
   const [internal, setInternal] = useState(false);
   const [notes, setNotes] = useState('');
+  const [email, setEmail] = useState('');
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!open || !owner) return;
-    setName(owner.name); setInternal(Boolean(owner.internal)); setNotes(owner.notes || '');
+    setName(owner.name); setInternal(Boolean(owner.internal)); setNotes(owner.notes || ''); setEmail(owner.email || '');
     setTouched(false); setError(null); setSubmitting(false);
   }, [open, owner]);
 
@@ -33,14 +34,15 @@ const EditOwnerDialog = ({ open, onClose, owner, existingNames = [], onSaved }) 
     return null;
   }, [name, existingNames, owner]);
 
-  const canSubmit = !nameError && !submitting;
+  const emailError = useMemo(() => (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? N.emailInvalid : null), [email]);
+  const canSubmit = !nameError && !emailError && !submitting;
   const submit = async (e) => {
     e.preventDefault();
     setTouched(true);
     if (!canSubmit) return;
     setSubmitting(true); setError(null);
     try {
-      const saved = await updateOwner(owner.id, { name: name.trim(), internal, notes: notes.trim() || null });
+      const saved = await updateOwner(owner.id, { name: name.trim(), internal, notes: notes.trim() || null, email: email.trim() || null });
       toast('success', T.saved);
       onSaved?.(saved);
       onClose();
@@ -66,6 +68,9 @@ const EditOwnerDialog = ({ open, onClose, owner, existingNames = [], onSaved }) 
           <input ref={nameRef} id="edit-owner-name" type="text" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onBlur={() => setTouched(true)} className={inputClass(touched && nameError)} />
         </Field>
         <Switch id="edit-owner-internal" checked={internal} onChange={setInternal} label={N.internal} description={N.internalHelp} />
+        <Field id="edit-owner-email" label={N.email} optional hint={N.emailHelp} error={touched ? emailError : null}>
+          <input id="edit-owner-email" type="email" value={email} maxLength={255} onChange={(e) => setEmail(e.target.value)} placeholder={N.emailPlaceholder} aria-invalid={touched && Boolean(emailError)} className={inputClass(touched && emailError)} />
+        </Field>
         <Field id="edit-owner-notes" label={N.notes} optional>
           <textarea id="edit-owner-notes" rows={3} value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} placeholder={N.notesPlaceholder} className={`${inputClass(false)} resize-y`} />
         </Field>

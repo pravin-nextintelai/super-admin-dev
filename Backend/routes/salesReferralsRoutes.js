@@ -41,6 +41,7 @@ const router = (pool) => {
   r.get('/owners/:ownerId', ctrl.getOwner);
   r.put('/owners/:ownerId', ctrl.updateOwner);
   r.post('/owners/:ownerId/codes', ctrl.addCode);
+  r.post('/owners/:ownerId/email', ctrl.emailOwnerCodes); // A19 one email with all active codes + links
 
   // Codes (A9–A11 static paths before /:codeId)
   r.get('/codes/suggest', ctrl.suggestCodes);
@@ -50,6 +51,7 @@ const router = (pool) => {
   r.post('/codes/:codeId/deactivate', ctrl.deactivateCode);
   r.post('/codes/:codeId/activate', ctrl.activateCode);
   r.post('/codes/:codeId/refresh', ctrl.refreshCode);
+  r.post('/codes/:codeId/email', ctrl.emailCode);       // A18 send code + link to the sales owner
 
   // Reports (A12–A15)
   r.get('/reports/summary', ctrl.reportSummary);

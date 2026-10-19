@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Copy, Trash2 } from 'lucide-react';
+import { ArrowRight, Copy, Mail, Trash2 } from 'lucide-react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { createOwner, suggestCode } from '../services/salesReferrals.api';
+import { createOwner, emailOwnerCodes, suggestCode } from '../services/salesReferrals.api';
 import { allLinksMessage, copyText, errorText, MAX_CODES_PER_CREATE, normalizeCode, toast } from '../utils/salesReferrals.utils';
 import { salesReferralsPath } from '../salesReferrals.routes';
 import Dialog from '../components/Dialog';
@@ -10,6 +10,8 @@ import CodeField from '../components/CodeField';
 import ShareCodesPanel from './ShareCodesPanel';
 import { Button, Field, IconButton, Switch } from '../components/primitives';
 import { inputClass } from '../components/formClasses';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const T = SALES_REFERRALS_TEXT.newOwner;
 const S = SALES_REFERRALS_TEXT.share;
@@ -28,6 +30,8 @@ const NewOwnerDialog = ({ open, onClose, existingNames = [], onCreated }) => {
   const [nameTouched, setNameTouched] = useState(false);
   const [internal, setInternal] = useState(false);
   const [notes, setNotes] = useState('');
+  const [email, setEmail] = useState('');
+  const [emailing, setEmailing] = useState(false);
   const [rows, setRows] = useState(() => [newRow()]);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -40,7 +44,7 @@ const NewOwnerDialog = ({ open, onClose, existingNames = [], onCreated }) => {
   // Reset whenever the dialog opens.
   useEffect(() => {
     if (!open) return;
-    setName(''); setNameTouched(false); setInternal(false); setNotes('');
+    setName(''); setNameTouched(false); setInternal(false); setNotes(''); setEmail(''); setEmailing(false);
     setRows([newRow()]); setRowStates({}); setSubmitting(false); setSubmitError(null); setCreated(null);
   }, [open]);
 
@@ -114,7 +118,8 @@ const NewOwnerDialog = ({ open, onClose, existingNames = [], onCreated }) => {
   };
 
   const allRowsAvailable = rows.every((r) => rowStates[r.key] === 'available');
-  const canSubmit = !nameError && allRowsAvailable && !submitting;
+  const emailValid = !email.trim() || EMAIL_RE.test(email.trim());
+  const canSubmit = !nameError && emailValid && allRowsAvailable && !submitting;
 
   const submit = async (e) => {
     e?.preventDefault?.();
@@ -124,7 +129,7 @@ const NewOwnerDialog = ({ open, onClose, existingNames = [], onCreated }) => {
     setSubmitting(true); setSubmitError(null);
     try {
       const owner = await createOwner({
-        name: name.trim(), internal, notes: notes.trim(),
+        name: name.trim(), internal, notes: notes.trim(), email: email.trim() || null,
         codes: rows.map((r) => ({ code: normalizeCode(r.code), label: r.label.trim() || null })),
       });
       setCreated(owner);
@@ -154,7 +159,25 @@ const NewOwnerDialog = ({ open, onClose, existingNames = [], onCreated }) => {
         subtitle={S.subtitle(codes.length)}
         footer={(
           <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-2">
-            <Button icon={Copy} onClick={() => copyText(allLinksMessage(owner.name, codes), S.copiedAll)}>{S.copyAll}</Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button icon={Copy} onClick={() => copyText(allLinksMessage(owner.name, codes), S.copiedAll)}>{S.copyAll}</Button>
+              <Button
+                icon={Mail}
+                loading={emailing}
+                disabled={emailing}
+                title={owner.email ? `${S.emailAll}: ${owner.email}` : S.emailAllNoAddress}
+                onClick={async () => {
+                  if (!owner.email) { toast('error', S.emailAllNoAddress); return; }
+                  setEmailing(true);
+                  try {
+                    await emailOwnerCodes(owner.id, { to: owner.email, codeIds: codes.map((c) => c.id) }); // ONE email listing every code + link
+                    toast('success', S.emailAllDone(codes.length, owner.email));
+                  } catch (err) { toast('error', errorText(err)); } finally { setEmailing(false); }
+                }}
+              >
+                {emailing ? S.emailAllSending : S.emailAll}
+              </Button>
+            </div>
             <Button variant="primary" icon={ArrowRight} onClick={() => { onClose(); navigate(salesReferralsPath.owner(owner.id)); }}>{S.goTo(owner.name)}</Button>
           </div>
         )}
@@ -204,6 +227,10 @@ const NewOwnerDialog = ({ open, onClose, existingNames = [], onCreated }) => {
         </Field>
 
         <Switch id="owner-internal" checked={internal} onChange={setInternal} label={T.internal} description={T.internalHelp} />
+
+        <Field id="owner-email" label={T.email} optional hint={T.emailHelp} error={email.trim() && !EMAIL_RE.test(email.trim()) ? T.emailInvalid : null}>
+          <input id="owner-email" type="email" value={email} maxLength={255} onChange={(e) => setEmail(e.target.value)} placeholder={T.emailPlaceholder} className={inputClass(Boolean(email.trim() && !EMAIL_RE.test(email.trim())))} />
+        </Field>
 
         <section aria-labelledby="codes-heading">
           <div className="flex items-center gap-2 mb-2">

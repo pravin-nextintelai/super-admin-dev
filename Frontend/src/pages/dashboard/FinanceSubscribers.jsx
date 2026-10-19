@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Download, FileText, Info, Lock, ReceiptText,
-  RefreshCw, Search, Users, X,
+  AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Download, Eye, FileText, Lock, ReceiptText,
+  RefreshCw, Search, Tag, Users, X,
 } from 'lucide-react';
+import SetWorkspaceReferralDialog from '../../features/sales-referrals/dialogs/SetWorkspaceReferralDialog';
 import { fmtDateIST, fmtDateTimeIST, fmtMoneyStr, fmtNum, fmtYmd } from './userAnalytics/analyticsFormat';
 import { downloadUsersPlanDocument, downloadUsersPlansCsv, fetchUsersPlans } from './userAnalytics/analyticsApi';
 import UserPlanDetailDrawer, { Pill } from './userAnalytics/UserPlanDetailDrawer';
@@ -69,7 +70,7 @@ const saveBlob = (blob, filename) => {
 };
 
 const Mono = ({ children, className = '' }) => (children
-  ? <span className={`font-mono text-[11px] text-slate-700 ${className}`}>{children}</span>
+  ? <span className={`font-mono text-[11px] text-slate-700 break-all ${className}`}>{children}</span>
   : <span className="text-slate-400">—</span>);
 
 const OptionCard = ({ name, value, checked, onChange, title, help, meta, inputRef }) => (
@@ -185,7 +186,7 @@ const FinanceSubscribers = () => {
   const [searchInput, setSearchInput] = useState('');
   const [codeInput, setCodeInput] = useState('');
   const [view, setView] = useState('users');
-  const [sortBy, setSortBy] = useState('joined');
+  const [sortBy, setSortBy] = useState('purchase_date'); // latest payment first; users without payments at the bottom
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
@@ -200,6 +201,7 @@ const FinanceSubscribers = () => {
   const [busyKey, setBusyKey] = useState(null);
   const reqIdRef = useRef(0);
   const { toasts, toast, dismiss } = useToasts();
+  const [assignFor, setAssignFor] = useState(null); // row whose referral code the admin is assigning / changing
 
   const setFilter = useCallback((patch) => { setFilters((f) => ({ ...f, ...patch })); setPage(1); }, []);
 
@@ -216,7 +218,7 @@ const FinanceSubscribers = () => {
   const sortable = view === 'transactions' ? TX_SORT : USER_SORT;
   useEffect(() => {
     // Keep the sort valid when the view changes.
-    if (!sortable.includes(sortBy)) { setSortBy(view === 'transactions' ? 'purchase_date' : 'joined'); setSortDir('desc'); }
+    if (!sortable.includes(sortBy)) { setSortBy('purchase_date'); setSortDir('desc'); }
   }, [view, sortBy, sortable]);
 
   const query = useMemo(() => ({ ...toQuery(filters), view, sortBy, sortDir }), [filters, view, sortBy, sortDir]);
@@ -342,7 +344,7 @@ const FinanceSubscribers = () => {
     const active = can && sortBy === field;
     const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
     return (
-      <th className={`px-3 py-2.5 font-semibold border-b border-slate-200 whitespace-nowrap ${align === 'right' ? 'text-right' : 'text-left'} ${className}`} aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}>
+      <th className={`px-2 py-2 font-semibold border-b border-slate-200 whitespace-nowrap overflow-hidden ${align === 'right' ? 'text-right' : 'text-left'} ${className}`} aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}>
         {can ? (
           <button type="button" onClick={() => toggleSort(field)} className={`inline-flex items-center gap-1 hover:text-blue-700 ${active ? 'text-blue-700' : ''}`} title={`Sort by ${children}`}>
             {children} <Icon className={`w-3 h-3 ${active ? '' : 'opacity-40'}`} />
@@ -352,8 +354,8 @@ const FinanceSubscribers = () => {
     );
   };
 
-  const td = 'px-3 py-2.5 border-b border-slate-100 align-middle';
-  const numCls = 'text-right tabular-nums whitespace-nowrap';
+  const td = 'px-2 py-2 border-b border-slate-100 align-middle overflow-hidden';
+  const numCls = 'text-right tabular-nums whitespace-nowrap text-xs';
 
   return (
     <div className="h-[calc(100vh-5rem)] flex flex-col gap-2.5 min-h-0">
@@ -477,24 +479,27 @@ const FinanceSubscribers = () => {
               <p className="text-sm">{hasFilters ? `No ${isTx ? 'payments' : 'users'} match all selected filters.` : isTx ? 'No paid plan payments yet.' : 'No users yet.'}</p>
             </div>
           ) : (
-            <table className="w-full min-w-[112rem] text-sm border-separate border-spacing-0">
+            <table className="w-full table-fixed text-[13px] border-separate border-spacing-0">
+              {/* Fixed percentage widths so the whole table fits the viewport — no horizontal scrollbar. */}
+              <colgroup>
+                {[15, 8, 7, 6, 5.5, 4.5, 4.5, 4.5, 4.5, 6, 6.5, 9.5, 10, ...(isTx ? [6] : []), 8.5].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}
+              </colgroup>
               <thead className="sticky top-0 z-10">
-                <tr className="bg-slate-50 text-[11px] text-slate-500 uppercase tracking-wider">
-                  <Th field="username">User</Th>
+                <tr className="bg-slate-50 text-[10px] text-slate-500 uppercase tracking-wider">
+                  <Th field="username" className="pl-4">User</Th>
                   <Th field="sales_owner">Sales owner</Th>
-                  <Th>Referral code</Th>
-                  <Th field="user_status">User status</Th>
+                  <Th>Code</Th>
+                  <Th field="user_status">Status</Th>
                   <Th field="plan">Plan</Th>
                   <Th align="right">Basic</Th>
                   <Th align="right">CGST</Th>
                   <Th align="right">SGST</Th>
                   <Th align="right">IGST</Th>
                   <Th field="total_amount" align="right">Total</Th>
-                  <Th field="purchase_date">Purchase date</Th>
+                  <Th field="purchase_date">Purchased</Th>
                   <Th>Invoice no.</Th>
-                  <Th>Razorpay payment ID</Th>
-                  <Th>Razorpay order ID</Th>
-                  {isTx && <Th field="status">Payment status</Th>}
+                  <Th>Payment ID</Th>
+                  {isTx && <Th field="status">Pay status</Th>}
                   <Th align="right">Actions</Th>
                 </tr>
               </thead>
@@ -506,21 +511,21 @@ const FinanceSubscribers = () => {
                   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
                   const key = (doc) => `${r.user_id}-${pay?.payment_id}-${doc}`;
                   const docBtn = (doc, label, Icon, enabled, title) => (
-                    <button type="button" disabled={!enabled || busyKey === key(doc)} onClick={() => handleDoc(r, pay, doc)} title={title}
-                      className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-sm hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-slate-700 disabled:hover:border-slate-200">
-                      {busyKey === key(doc) ? <Download className="w-3.5 h-3.5 animate-pulse" /> : <Icon className="w-3.5 h-3.5" />} {label}
+                    <button type="button" disabled={!enabled || busyKey === key(doc)} onClick={() => handleDoc(r, pay, doc)} title={title} aria-label={label}
+                      className="inline-flex items-center justify-center h-7 w-7 rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-slate-600 disabled:hover:border-slate-200">
+                      {busyKey === key(doc) ? <Download className="w-4 h-4 animate-pulse" /> : <Icon className="w-4 h-4" />}
                     </button>
                   );
                   return (
                     <tr key={`${r.user_id}-${pay?.payment_id || 'none'}-${i}`} className="hover:bg-slate-50/80 transition-colors">
-                      <td className={td}>
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0">{initials || 'U'}</div>
+                      <td className={`${td} pl-4`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center shrink-0">{initials || 'U'}</div>
                           <div className="flex flex-col min-w-0">
                             <button type="button" onClick={() => setDetailUserId(r.user_id)} className="font-semibold text-slate-800 flex items-center gap-1.5 truncate text-left hover:text-blue-700" title="Open details">
                               {name}{r.is_blocked && <Lock className="w-3 h-3 text-red-500 shrink-0" />}
                             </button>
-                            {r.email && <span className="text-xs text-slate-500 truncate">{r.email}</span>}
+                            {r.email && <span className="text-xs text-slate-500 break-all leading-tight">{r.email}</span>}
                             {!isTx && Number(r.plan_transaction_count) > 1 && (
                               <button type="button" onClick={() => setDetailUserId(r.user_id)} className="text-[11px] text-blue-600 hover:underline text-left">{fmtNum(r.plan_transaction_count)} purchases</button>
                             )}
@@ -529,11 +534,17 @@ const FinanceSubscribers = () => {
                       </td>
                       <td className={`${td} whitespace-nowrap`}>
                         <div className="flex flex-col gap-0.5">
-                          <span className={`text-sm font-medium ${r.sales_owner ? 'text-slate-800' : 'text-slate-400'}`}>{r.sales_owner?.name || 'Direct'}</span>
+                          <span className={`block truncate text-[13px] font-medium ${r.sales_owner ? 'text-slate-800' : 'text-slate-400'}`} title={r.sales_owner?.name || ''}>{r.sales_owner?.name || 'Direct'}</span>
                           <Pill value={r.owner_type || (r.sales_owner ? (r.sales_owner.internal ? 'INTERNAL' : 'OUTSOURCED') : 'DIRECT')} className="w-fit" />
                         </div>
                       </td>
-                      <td className={`${td} whitespace-nowrap`} title={r.referral?.label || ''}><Mono>{r.referral_code}</Mono>{r.referral?.level === 'workspace' && <span className="block text-[10px] text-slate-400">via workspace</span>}</td>
+                      <td className={td} title={r.referral?.source === 'ADMIN' ? `Assigned by admin${r.referral.set_at ? ` on ${fmtDateIST(r.referral.set_at)}` : ''}${r.referral.reason ? `: ${r.referral.reason}` : ''}` : (r.referral?.label || '')}>
+                        {r.referral_code ? <Mono>{r.referral_code}</Mono> : (
+                          <button type="button" onClick={() => setAssignFor(r)} className="text-[11px] font-semibold text-blue-600 hover:underline" title="This user signed up without a referral code — assign one so the sales owner gets credit">Assign code</button>
+                        )}
+                        {r.referral?.level === 'workspace' && <span className="block text-[10px] text-slate-400">via workspace</span>}
+                        {r.referral?.source === 'ADMIN' && <span className="block text-[10px] text-violet-700 font-semibold" title={r.referral.reason || ''}>by admin{r.referral.reason ? ' · note' : ''}</span>}
+                      </td>
                       <td className={`${td} whitespace-nowrap`}><Pill value={r.user_status || 'active'} /></td>
                       <td className={`${td} whitespace-nowrap font-medium text-slate-700`}>{(isTx ? pay?.plan_name : r.plan_name) || 'Free'}</td>
                       <td className={`${td} ${numCls} text-slate-700`}>{fmtMoneyStr(pay?.basic_amount)}</td>
@@ -545,23 +556,27 @@ const FinanceSubscribers = () => {
                         {pay?.amount_refunded && pay.amount_refunded !== '0.00' && <span className="block text-[10px] font-normal text-violet-700">refunded {fmtMoneyStr(pay.amount_refunded)}</span>}
                       </td>
                       <td className={`${td} whitespace-nowrap text-slate-600`} title={pay?.purchase_date ? fmtDateTimeIST(pay.purchase_date) : undefined}>{pay?.purchase_date ? fmtDateIST(pay.purchase_date) : <span className="text-slate-400">—</span>}</td>
-                      <td className={`${td} whitespace-nowrap`}>{pay?.invoice_number ? <Mono>{pay.invoice_number}</Mono> : <span className="text-slate-400" title={paid ? 'No application invoice for this payment' : ''}>—</span>}</td>
-                      <td className={`${td} whitespace-nowrap`}>
+                      <td className={td}>{pay?.invoice_number ? <Mono>{pay.invoice_number}</Mono> : <span className="text-slate-400" title={paid ? 'No application invoice for this payment' : ''}>—</span>}</td>
+                      <td className={td} title={pay?.razorpay_order_id ? `Razorpay order ${pay.razorpay_order_id}` : undefined}>
                         <Mono>{pay?.razorpay_payment_id}</Mono>
-                        {pay?.razorpay_receipt && <span className="block text-[10px] text-slate-400 font-mono" title="Razorpay receipt">{pay.razorpay_receipt}</span>}
+                        {pay?.razorpay_receipt && <span className="block text-[10px] text-slate-400 font-mono break-all" title="Razorpay receipt">{pay.razorpay_receipt}</span>}
                       </td>
-                      <td className={`${td} whitespace-nowrap`}><Mono>{pay?.razorpay_order_id}</Mono></td>
                       {isTx && <td className={`${td} whitespace-nowrap`}><span className={`inline-flex h-5 px-1.5 rounded border text-[10px] font-semibold uppercase ${paid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{pay?.status || '—'}</span></td>}
-                      <td className={`${td} whitespace-nowrap`}>
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className={td}>
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
                           {paid ? (
                             <>
                               {docBtn('invoice', 'Invoice', FileText, Boolean(pay.invoice_number), pay.invoice_number ? 'Download tax invoice (PDF)' : 'No application invoice exists for this payment')}
                               {docBtn('receipt', 'Receipt', ReceiptText, true, 'Download payment receipt (PDF)')}
                             </>
-                          ) : <span className="text-xs text-slate-400 mr-1">No payments</span>}
-                          <button type="button" onClick={() => setDetailUserId(r.user_id)} className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-sm hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50" title="Full history">
-                            <Info className="w-3.5 h-3.5" /> Details
+                          ) : <span className="text-xs text-slate-400 mr-1" title="No payments">—</span>}
+                          {!r.referral_code && (
+                            <button type="button" onClick={() => setAssignFor(r)} aria-label="Assign referral code" className="inline-flex items-center justify-center h-7 w-7 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 shadow-sm hover:bg-violet-100 hover:border-violet-300 transition-colors" title="Direct signup — assign a referral code so the sales owner gets credit">
+                              <Tag className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button type="button" onClick={() => setDetailUserId(r.user_id)} aria-label="Details" className="inline-flex items-center justify-center h-7 w-7 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 shadow-sm hover:bg-blue-100 hover:border-blue-300 transition-colors" title="View details (full history)">
+                            <Eye className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -595,6 +610,23 @@ const FinanceSubscribers = () => {
 
       <ExportCsvDialog open={exportOpen} filters={filters} filterLabels={chips.map((c) => c.label)} view={view} exporting={exporting} onClose={() => setExportOpen(false)} onDownload={handleDownloadCsv} />
       {detailUserId != null && <UserPlanDetailDrawer userId={detailUserId} onClose={() => setDetailUserId(null)} onToast={toast} />}
+      {/* Assign / change the referral attribution of a direct-signup user (A16: firm workspace when the user has one, else the user). */}
+      <SetWorkspaceReferralDialog
+        open={Boolean(assignFor)}
+        onClose={() => setAssignFor(null)}
+        workspace={assignFor ? {
+          tenantId: assignFor.firm_id || String(assignFor.user_id),
+          firmName: assignFor.username || assignFor.email || `User #${assignFor.user_id}`,
+          referral: assignFor.referral ? { code: { code: assignFor.referral.code } } : null,
+        } : null}
+        onSaved={(saved) => {
+          const code = saved?.referral?.code?.code;
+          const owner = saved?.referral?.owner?.name;
+          toast('success', `${assignFor?.username || 'User'} is now attributed to ${code || 'the selected code'}${owner ? ` (${owner})` : ''}.`);
+          setAssignFor(null);
+          load();
+        }}
+      />
       <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   );

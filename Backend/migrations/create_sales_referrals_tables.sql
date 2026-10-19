@@ -88,3 +88,8 @@ CREATE TABLE IF NOT EXISTS user_referral_history (
 
 CREATE INDEX IF NOT EXISTS idx_user_referral_history_user
   ON user_referral_history (user_id, changed_at DESC);
+
+-- "Send to email": the sales owner's address, and when/where a code was last emailed (additive, nullable).
+ALTER TABLE sales_owners   ADD COLUMN IF NOT EXISTS email            VARCHAR(255);
+ALTER TABLE referral_codes ADD COLUMN IF NOT EXISTS last_emailed_at  TIMESTAMPTZ;
+ALTER TABLE referral_codes ADD COLUMN IF NOT EXISTS last_emailed_to  VARCHAR(255);

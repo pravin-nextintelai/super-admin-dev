@@ -11,6 +11,7 @@ const PAID = ['captured', 'paid', 'success', 'succeeded', 'completed'];
 const { logPortalFlow } = require('../utils/portalAdminLog');
 const logger = require('../config/logger');
 const up = require('../services/usersPlansService');
+const { renderBillingDocument } = require('../services/invoiceRenderService');
 const { paiseToRupeeString } = require('../utils/money');
 
 /** Enrich Payment-DB rows (which only have user_id) with username/email from the Auth DB. */
@@ -746,6 +747,7 @@ async function attachBilling(userRows, paymentPool) {
             // Users & Plans extensions (attribution, derived status, latest paid plan payment with GST + references)
             user_status: attrs?.user_status ?? null,
             owner_type: attrs?.owner_type ?? null,
+            firm_id: attrs?.firm_id ?? null,
             sales_owner: attrs?.sales_owner ?? null,
             referral_code: attrs?.referral_code ?? null,
             referral: attrs?.referral ?? null,
@@ -870,7 +872,8 @@ function mapInvoiceRow(row, kind) {
         currency: row.currency || 'INR',
         status: row.status || null,
         payment_method: row.payment_method || (kind === 'plan' ? null : 'Razorpay'),
-        invoice_id: row.id != null ? String(row.id) : null,
+        invoice_id: row.id != null ? String(row.id) : null,       // legacy: purchase row id (NOT an invoice number)
+        invoice_number: row.invoice_number || null,                 // app_invoices number, when one was issued
         receipt: row.razorpay_payment_id || null,
         order_id: row.razorpay_order_id || null,
         created_at: row.created_at || row.transaction_date || null,
@@ -1084,14 +1087,17 @@ exports.getSubscriberInvoices = async (req, res, pools) => {
         const user = userRes.rows[0];
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
+        const schema = await up.invoiceSchema(pools.paymentPool);
         const planSql = (legacy) => `
             SELECT p.id, p.amount, p.currency, p.status, p.payment_method,
                    p.created_at, p.transaction_date, p.razorpay_payment_id, p.razorpay_order_id,
-                   TRIM(COALESCE(mp.name${legacy ? ', sp.name' : ''}, '')) AS plan_name
+                   TRIM(COALESCE(mp.name${legacy ? ', sp.name' : ''}, '')) AS plan_name,
+                   ai.invoice_number
             FROM payments p
             LEFT JOIN user_subscriptions us ON us.id = p.subscription_id
             LEFT JOIN monthly_plans mp ON mp.id = us.monthly_plan_id
             ${legacy ? 'LEFT JOIN subscription_plans sp ON sp.id = us.plan_id' : ''}
+            ${up.invoiceLateral(schema)}
             WHERE p.user_id = $1
             ORDER BY p.created_at DESC NULLS LAST, p.id DESC`;
         let planRows;
@@ -1103,7 +1109,8 @@ exports.getSubscriberInvoices = async (req, res, pools) => {
         const [topupRows, addonRows] = await Promise.all([
             pools.paymentPool.query(
                 `SELECT tp.id, tp.amount, tp.currency, tp.status, tp.created_at,
-                        tp.razorpay_payment_id, tp.razorpay_order_id, pl.name AS plan_name
+                        tp.razorpay_payment_id, tp.razorpay_order_id, pl.name AS plan_name,
+                        ${up.packInvoiceSql(schema, 'tp', 'topup')} AS invoice_number
                  FROM user_token_topup_purchases tp
                  LEFT JOIN topup_plans pl ON pl.id = tp.topup_plan_id
                  WHERE tp.user_id = $1
@@ -1112,7 +1119,8 @@ exports.getSubscriberInvoices = async (req, res, pools) => {
             ).catch(() => ({ rows: [] })),
             pools.paymentPool.query(
                 `SELECT up.id, up.amount, up.currency, up.status, up.created_at,
-                        up.razorpay_payment_id, up.razorpay_order_id, ap.name AS plan_name
+                        up.razorpay_payment_id, up.razorpay_order_id, ap.name AS plan_name,
+                        ${up.packInvoiceSql(schema, 'up', 'storage')} AS invoice_number
                  FROM user_storage_addon_purchases up
                  LEFT JOIN addon_plans ap ON ap.id = up.addon_plan_id
                  WHERE up.user_id = $1
@@ -1183,49 +1191,6 @@ exports.getTopupBuyers = async (req, res, pools) => {
 };
 
 
-const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-function billingDocHtml(doc, { user, pay }) {
-    const isInvoice = doc === 'invoice';
-    const date = pay.purchase_date || pay.created_at;
-    const dateStr = date ? new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—';
-    const cur = pay.currency && pay.currency !== 'INR' ? `${escHtml(pay.currency)} ` : '₹';
-    const money = (v) => (v == null ? '—' : `${cur}${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-    const rows = [
-        isInvoice ? ['Invoice number', escHtml(pay.invoice_number)] : ['Receipt reference', escHtml(pay.razorpay_receipt || `Payment ${pay.razorpay_payment_id || pay.payment_id}`)],
-        ['Date', dateStr],
-        ['Billed to', `${escHtml(user.username || `User #${user.id}`)}${user.email ? `<br><span class="muted">${escHtml(user.email)}</span>` : ''}`],
-        ['Razorpay Payment ID', escHtml(pay.razorpay_payment_id || '—')],
-        ['Razorpay Order ID', escHtml(pay.razorpay_order_id || '—')],
-        ...(pay.razorpay_invoice_number ? [['Razorpay invoice', escHtml(pay.razorpay_invoice_number)]] : []),
-        ['Payment method', escHtml(pay.payment_method || 'Razorpay')],
-        ['Status', escHtml(pay.status || '—')],
-        ...(pay.paise.refunded > 0 ? [['Refunded', money(pay.amount_refunded)]] : []),
-    ];
-    const taxLines = pay.tax ? [
-        ['Taxable value', money(pay.basic_amount)],
-        ...(pay.tax.type === 'IGST' ? [[`IGST @ ${escHtml(pay.tax.igst_rate || '')}%`, money(pay.igst_amount)]] : [
-            [`CGST @ ${escHtml(pay.tax.cgst_rate || '')}%`, money(pay.cgst_amount)],
-            [`SGST @ ${escHtml(pay.tax.sgst_rate || '')}%`, money(pay.sgst_amount)],
-        ]),
-    ] : [];
-    return `<!doctype html><html><head><meta charset="utf-8"><style>
-        body{font-family:Arial,Helvetica,sans-serif;color:#1e293b;margin:48px;font-size:13px}
-        h1{font-size:26px;margin:0 0 4px;color:#1d4ed8}.muted{color:#64748b;font-size:12px}
-        table{width:100%;border-collapse:collapse;margin-top:24px}td,th{padding:10px 8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
-        th{background:#f8fafc;font-size:11px;text-transform:uppercase;color:#64748b}.r{text-align:right}.total td{font-weight:bold;font-size:15px;border-bottom:2px solid #1e293b}
-        .meta td:first-child{width:180px;color:#64748b}.sub td{color:#475569}
-    </style></head><body>
-        <h1>${isInvoice ? 'Tax Invoice' : 'Payment Receipt'}</h1>
-        <div class="muted">${isInvoice ? 'Subscription invoice' : 'Payment received — thank you'}${pay.tax?.basis === 'inclusive' ? ' · prices inclusive of GST' : ''}</div>
-        <table class="meta">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>
-        <table><tr><th>Description</th><th class="r">Amount</th></tr>
-            <tr><td>${escHtml(pay.plan_name || 'Plan')} subscription</td><td class="r">${money(pay.tax ? pay.basic_amount : pay.total_amount)}</td></tr>
-            ${taxLines.map(([k, v]) => `<tr class="sub"><td>${k}</td><td class="r">${v}</td></tr>`).join('')}
-            <tr class="total"><td>${isInvoice ? 'Total' : 'Amount paid'}</td><td class="r">${money(pay.total_amount)}</td></tr></table>
-        <p class="muted" style="margin-top:32px">This is a computer-generated document and does not require a signature.</p>
-    </body></html>`;
-}
 
 /** GET /subscribers/:userId/payments/:paymentId/:doc — download a plan payment's invoice or receipt as PDF. */
 exports.downloadSubscriberDocument = async (req, res, pools) => {
@@ -1237,7 +1202,7 @@ exports.downloadSubscriberDocument = async (req, res, pools) => {
     }
     let browser = null;
     try {
-        const userRes = await pools.authPool.query('SELECT id, username, email FROM users WHERE id = $1', [userId]);
+        const userRes = await pools.authPool.query('SELECT id, username, email, phone, location FROM users WHERE id = $1', [userId]);
         const user = userRes.rows[0];
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
@@ -1252,7 +1217,11 @@ exports.downloadSubscriberDocument = async (req, res, pools) => {
         const puppeteer = require('puppeteer');
         browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
         const page = await browser.newPage();
-        await page.setContent(billingDocHtml(doc, { user, pay }), { waitUntil: 'load' });
+        // Business-supplied Mustache templates (templates/tax-invoice.html, templates/payment-receipt.html).
+        const firm = await up.queryUserFirm(pools.authPool, userId).catch(() => null);
+        await page.setContent(renderBillingDocument(doc, pay, user, firm), { waitUntil: 'networkidle0', timeout: 15000 }).catch(async () => {
+            await page.setContent(renderBillingDocument(doc, pay, user, firm), { waitUntil: 'load' }); // fonts unreachable → system fallback font
+        });
         const pdf = await page.pdf({ format: 'A4', printBackground: true });
 
         logPortalFlow(req, 'Plan analytics billing document downloaded', { layer: 'PLAN_ANALYTICS', summary: { userId, paymentId, doc } });

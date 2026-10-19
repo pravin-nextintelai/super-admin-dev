@@ -78,7 +78,7 @@ const signupPath = (code) => `${SIGNUP_PATH}?ref=${encodeURIComponent(normalizeC
 
 /**
  * Customer signup links for a code:
- *   live  → `https://ailearn.co.in/register?ref=PRAV-7DQJ`
+ *   live  → `https://jurinex-dev.netlify.app/register?ref=PRAV-7DQJ`
  *   local → `http://localhost:5173/register?ref=PRAV-7DQJ`, only while the admin panel runs on
  *           localhost; `null` in production so a single link is shown.
  */

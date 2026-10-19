@@ -19,6 +19,7 @@ const { istDayStart, istDayEndExclusive } = require('../utils/time');
 const { createRazorpayClient, normalizeRazorpayPayment, RazorpayApiError } = require('./razorpayClient');
 const { reconcile, ISSUE_TYPES, SEVERITIES, normalizeDbStatus, normalizeRzStatus } = require('./reconciliationMatcher');
 const { toPaiseInt, rupeesToPaise, paiseToRupeeString } = require('../utils/money');
+const { invoiceSchema, packInvoiceSql } = require('./usersPlansService');
 const logger = require('../config/logger');
 
 const RUN_STATUSES = ['queued', 'running', 'completed', 'completed_with_issues', 'partial', 'failed'];
@@ -124,6 +125,8 @@ async function updateRun(payPool, runId, fields) {
 async function loadDbRows(payPool, from, toExclusive) {
     const pFrom = new Date(from.getTime() - PAD_MS);
     const pTo = new Date(toExclusive.getTime() + PAD_MS);
+    const schema = await invoiceSchema(payPool);
+    const bySource = schema.sourceCols ? `OR (ai.source_kind = 'payment' AND ai.source_id = p.id)` : '';
     const [plans, topups, addons] = await Promise.all([
         payPool.query(
             `SELECT p.id, p.user_id, p.razorpay_payment_id, p.razorpay_order_id, p.amount, p.amount_paise, p.currency, p.status,
@@ -131,7 +134,7 @@ async function loadDbRows(payPool, from, toExclusive) {
                     p.igst_amount_paise, p.total_amount_paise, p.tax_type,
                     COALESCE(p.purchase_date, p.captured_at, p.created_at) AS purchased_at,
                     COALESCE(NULLIF(TRIM(p.plan_name), ''), mp.name, sp.name) AS plan_name,
-                    (p.app_invoice_id IS NOT NULL OR EXISTS (SELECT 1 FROM app_invoices ai WHERE ai.payment_id = p.id)) AS has_invoice
+                    (p.app_invoice_id IS NOT NULL OR EXISTS (SELECT 1 FROM app_invoices ai WHERE ai.payment_id = p.id ${bySource})) AS has_invoice
              FROM payments p
              LEFT JOIN user_subscriptions us ON us.id = p.subscription_id
              LEFT JOIN monthly_plans mp ON mp.id = COALESCE(p.monthly_plan_id, us.monthly_plan_id)
@@ -140,13 +143,15 @@ async function loadDbRows(payPool, from, toExclusive) {
             [pFrom, pTo]
         ),
         payPool.query(
-            `SELECT t.id, t.user_id, t.razorpay_payment_id, t.razorpay_order_id, t.amount, t.currency, t.status, t.created_at AS purchased_at, pl.name AS plan_name
+            `SELECT t.id, t.user_id, t.razorpay_payment_id, t.razorpay_order_id, t.amount, t.currency, t.status, t.created_at AS purchased_at, pl.name AS plan_name,
+                    (${packInvoiceSql(schema, 't', 'topup')}) IS NOT NULL AS has_invoice
              FROM user_token_topup_purchases t LEFT JOIN topup_plans pl ON pl.id = t.topup_plan_id
              WHERE t.created_at >= $1 AND t.created_at < $2`,
             [pFrom, pTo]
         ).catch(() => ({ rows: [] })),
         payPool.query(
-            `SELECT a.id, a.user_id, a.razorpay_payment_id, a.razorpay_order_id, a.amount, a.currency, a.status, a.created_at AS purchased_at, ap.name AS plan_name
+            `SELECT a.id, a.user_id, a.razorpay_payment_id, a.razorpay_order_id, a.amount, a.currency, a.status, a.created_at AS purchased_at, ap.name AS plan_name,
+                    (${packInvoiceSql(schema, 'a', 'storage')}) IS NOT NULL AS has_invoice
              FROM user_storage_addon_purchases a LEFT JOIN addon_plans ap ON ap.id = a.addon_plan_id
              WHERE a.created_at >= $1 AND a.created_at < $2`,
             [pFrom, pTo]
@@ -156,7 +161,7 @@ async function loadDbRows(payPool, from, toExclusive) {
         source_table: table, source_id: r.id, user_id: r.user_id, kind: table === 'user_token_topup_purchases' ? 'topup' : 'addon',
         razorpay_payment_id: r.razorpay_payment_id || null, razorpay_order_id: r.razorpay_order_id || null,
         amount_paise: rupeesToPaise(r.amount), currency: r.currency || 'INR', status: r.status, refund_status: null, amount_refunded_paise: 0,
-        purchased_at: r.purchased_at, tax: null, has_invoice: false, plan_name: r.plan_name || null,
+        purchased_at: r.purchased_at, tax: null, has_invoice: Boolean(r.has_invoice), plan_name: r.plan_name || null,
     });
     return [
         ...plans.rows.map((r) => ({

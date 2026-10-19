@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { BadgeCheck, CircleDashed, Clock, Copy, Eye, Link2, LinkIcon, Pencil, Plus, Power, RefreshCw, Users, Tag } from 'lucide-react';
+import { BadgeCheck, CircleDashed, Clock, Copy, Eye, Link2, LinkIcon, Mail, Pencil, Plus, Power, RefreshCw, Users, Tag } from 'lucide-react';
 import { KpiCard } from '../../../pages/dashboard/userAnalytics/AnalyticsCharts';
 import { SALES_REFERRALS_TEXT, SALES_REFERRALS_TOOLTIPS } from '../constants/salesReferrals.text';
 import { getOwner, getOwnerCodesReport, getOwnersReport } from '../services/salesReferrals.api';
@@ -14,6 +14,7 @@ import EditOwnerDialog from '../dialogs/EditOwnerDialog';
 import EditLabelDialog from '../dialogs/EditLabelDialog';
 import RefreshCodeDialog from '../dialogs/RefreshCodeDialog';
 import CodeStatusDialog from '../dialogs/CodeStatusDialog';
+import SendCodeEmailDialog from '../dialogs/SendCodeEmailDialog';
 import { Avatar, Breadcrumb, Button, CodeStatusBadge, CodeText, ErrorState, MixBar, NewBadge, PageSkeleton, PaidPctBar, TypeBadge } from '../components/primitives';
 import { createDebugLogger } from '../../../utils/debugLogger';
 
@@ -37,6 +38,7 @@ const SalesOwnerDetailPage = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [dialog, setDialog] = useState(null); // { type: 'add'|'edit'|'label'|'refresh'|'deactivate'|'activate', code? }
+  const [emailDialog, setEmailDialog] = useState(null); // { code, offer } — kept separate so a closing action dialog can hand over to it
 
   const load = useCallback(async () => {
     setError(null); setRefreshing(true);
@@ -55,6 +57,12 @@ const SalesOwnerDetailPage = () => {
 
   const close = () => setDialog(null);
   const afterChange = () => load();
+  /** After a code is created, refreshed or disabled, offer to email the result to the sales owner right away. */
+  const afterCodeChange = (result) => {
+    load();
+    const code = result?.newCode || result; // refresh returns { oldCode, newCode }
+    if (code?.id && code?.code) setEmailDialog({ code, offer: true });
+  };
 
   const menuFor = (c) => {
     const links = referralLinks(c.code);
@@ -65,6 +73,7 @@ const SalesOwnerDetailPage = () => {
       if (links.local) items.push({ id: 'copy-local-link', label: T.menu.copyLocalLink, icon: Link2, onSelect: () => copyText(links.local, S.copiedLink) });
     }
     items.push({ id: 'signups', label: T.menu.viewSignups, icon: Eye, onSelect: () => navigate(salesReferralsPath.codeSignups(ownerId, c.id, rangeSearch)) });
+    items.push({ id: 'email', label: T.menu.sendEmail, icon: Mail, onSelect: () => setEmailDialog({ code: c, offer: false }) });
     items.push({ id: 'label', label: T.menu.editLabel, icon: Tag, onSelect: () => setDialog({ type: 'label', code: c }) });
     if (c.active) {
       items.push({ id: 'refresh', label: T.menu.refresh, icon: RefreshCw, onSelect: () => setDialog({ type: 'refresh', code: c }) });
@@ -103,10 +112,12 @@ const SalesOwnerDetailPage = () => {
                   <TypeBadge internal={owner.internal} />
                 </div>
                 <p className="text-sm text-slate-600 mt-1 whitespace-pre-line">{owner.notes || <span className="text-slate-400">{T.noNotes}</span>}</p>
+                <p className="text-xs text-slate-500 mt-1 inline-flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />{T.emailLine(owner.email)}</p>
                 <p className="text-xs text-slate-400 mt-1">{T.created(fmtDate(owner.createdAt))}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button icon={Mail} title={T.sendAllTitle} onClick={() => setEmailDialog({ codes: codes.filter((c) => c.active), offer: false })}>{T.sendAll}</Button>
               <Button icon={Pencil} onClick={() => setDialog({ type: 'edit' })}>{T.edit}</Button>
               <Button variant="primary" icon={Plus} onClick={() => setDialog({ type: 'add' })}>{T.addCode}</Button>
             </div>
@@ -206,11 +217,12 @@ const SalesOwnerDetailPage = () => {
             )}
           </section>
 
-          <AddCodeDialog open={dialog?.type === 'add'} onClose={close} owner={owner} existingCodes={codes.map((c) => c.code)} onAdded={afterChange} />
+          <AddCodeDialog open={dialog?.type === 'add'} onClose={close} owner={owner} existingCodes={codes.map((c) => c.code)} onAdded={afterCodeChange} />
           <EditOwnerDialog open={dialog?.type === 'edit'} onClose={close} owner={owner} existingNames={existingNames} onSaved={afterChange} />
           <EditLabelDialog open={dialog?.type === 'label'} onClose={close} code={dialog?.code} onSaved={afterChange} />
-          <RefreshCodeDialog open={dialog?.type === 'refresh'} onClose={close} code={dialog?.code} onRefreshed={afterChange} />
-          <CodeStatusDialog open={dialog?.type === 'deactivate' || dialog?.type === 'activate'} mode={dialog?.type} onClose={close} code={dialog?.code} onChanged={afterChange} />
+          <RefreshCodeDialog open={dialog?.type === 'refresh'} onClose={close} code={dialog?.code} onRefreshed={afterCodeChange} />
+          <CodeStatusDialog open={dialog?.type === 'deactivate' || dialog?.type === 'activate'} mode={dialog?.type} onClose={close} code={dialog?.code} onChanged={afterCodeChange} />
+          <SendCodeEmailDialog open={Boolean(emailDialog)} onClose={() => setEmailDialog(null)} owner={owner} code={emailDialog?.code} codes={emailDialog?.codes} offer={emailDialog?.offer} onSent={load} />
         </>
       )}
       {!loading && (!owner || !report) && !error && <p className="text-sm text-slate-500">{C.somethingWrong}</p>}

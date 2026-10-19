@@ -143,7 +143,8 @@ const UserPlanDetailDrawer = ({ userId, onClose, onToast }) => {
                     ['Referral code', u.referral_code ? <Mono>{u.referral_code}</Mono> : '—'],
                     u.referral?.label && ['Code label', u.referral.label],
                     u.referral?.level && ['Attributed via', u.referral.level === 'workspace' ? 'Workspace code' : 'Own code'],
-                    u.referral?.source && ['Source', u.referral.source],
+                    u.referral?.source && ['Source', u.referral.source === 'ADMIN' ? `Assigned by admin${u.referral.set_at ? ` on ${fmtDateIST(u.referral.set_at)}` : ''}` : 'Entered at signup'],
+                    u.referral?.reason && ['Note', u.referral.reason],
                     ['Joined', fmtDateTimeIST(u.joined_at || u.created_at)],
                   ]} />
                 </Section>
@@ -236,7 +237,7 @@ const UserPlanDetailDrawer = ({ userId, onClose, onToast }) => {
                 <Section icon={Package} title={`Top-ups & add-ons (${fmtNum(packs.length)})`}>
                   {packs.length === 0 ? <p className="text-sm text-slate-400">None.</p> : (
                     <table className="w-full text-xs border-separate border-spacing-0">
-                      <thead><tr>{['Date', 'Kind', 'Pack', 'Status', 'Amount', 'Payment ID'].map((h, i) => <th key={h} className={`${th} ${i === 4 ? 'text-right' : ''}`}>{h}</th>)}</tr></thead>
+                      <thead><tr>{['Date', 'Kind', 'Pack', 'Status', 'Amount', 'Invoice no.', 'Payment ID'].map((h, i) => <th key={h} className={`${th} ${i === 4 ? 'text-right' : ''}`}>{h}</th>)}</tr></thead>
                       <tbody>
                         {packs.map((p) => (
                           <tr key={`${p.kind}-${p.id}`}>
@@ -245,6 +246,7 @@ const UserPlanDetailDrawer = ({ userId, onClose, onToast }) => {
                             <td className={td}>{p.plan_name || '—'}</td>
                             <td className={td}><span className={`inline-flex h-5 px-1.5 rounded border text-[10px] font-semibold uppercase ${PAY_PILL(p.status, p.is_paid)}`}>{p.status || '—'}</span></td>
                             <td className={`${td} ${num}`}>{money(p.amount)}</td>
+                            <td className={td}>{p.invoice_number ? <Mono>{p.invoice_number}</Mono> : <span className="text-slate-400" title="No application invoice">—</span>}</td>
                             <td className={td}><Mono>{p.razorpay_payment_id}</Mono></td>
                           </tr>
                         ))}

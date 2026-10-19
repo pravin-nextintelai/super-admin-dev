@@ -32,14 +32,14 @@ const API_BASE_URL =
 
 /**
  * Customer-facing JuriNex app where referral signup links point.
- * - `live` is always offered (https://ailearn.co.in; override with VITE_CUSTOMER_APP_URL).
+ * - `live` is always offered (https://jurinex-dev.netlify.app; override with VITE_CUSTOMER_APP_URL).
  * - `local` (http://localhost:5173; override with VITE_CUSTOMER_APP_LOCAL_URL) is offered ONLY while
  *   the admin panel itself runs on localhost, so a production deployment shows a single link.
  */
 const envOr = (key, fallback) =>
   normalizeOriginUrl(typeof import.meta !== 'undefined' && import.meta.env?.[key] ? import.meta.env[key] : '', fallback);
 export const CUSTOMER_APP_URLS = Object.freeze({
-  live: envOr('VITE_CUSTOMER_APP_URL', 'https://ailearn.co.in'),
+  live: envOr('VITE_CUSTOMER_APP_URL', 'https://jurinex-dev.netlify.app'),
   local: shouldUseLocalApiByDefault ? envOr('VITE_CUSTOMER_APP_LOCAL_URL', 'http://localhost:5173') : null,
 });
 /** Default (live) customer app URL. */

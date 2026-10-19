@@ -39,7 +39,7 @@ const USER_STATUS_SQL = `
 /** Joins that resolve each user's referral code + sales owner. Requires `users u` in FROM. */
 const ATTRIBUTION_JOINS = `
   LEFT JOIN LATERAL (
-    SELECT tr.code_id, tr.source, tr.signed_up_at
+    SELECT tr.code_id, tr.source, tr.signed_up_at, tr.reason, tr.set_by, tr.set_at
     FROM tenant_referrals tr
     WHERE tr.tenant_id IN (
       SELECT fu.firm_id FROM firm_users fu WHERE fu.user_id = u.id
@@ -62,6 +62,14 @@ const USER_COLUMNS = `
   rc.id AS referral_code_id, rc.code AS referral_code, rc.label AS referral_label, rc.active AS referral_code_active,
   CASE WHEN tr.code_id IS NOT NULL THEN 'workspace' WHEN ur.code_id IS NOT NULL THEN 'user' END AS referral_level,
   COALESCE(tr.source, ur.source) AS referral_source,
+  CASE WHEN tr.code_id IS NOT NULL THEN tr.reason ELSE ur.reason END AS referral_reason,
+  CASE WHEN tr.code_id IS NOT NULL THEN tr.set_by ELSE ur.set_by END AS referral_set_by,
+  CASE WHEN tr.code_id IS NOT NULL THEN tr.set_at ELSE ur.set_at END AS referral_set_at,
+  (SELECT x.firm_id FROM (
+     SELECT f.id AS firm_id, 0 AS prio FROM firms f WHERE f.admin_user_id = u.id
+     UNION ALL
+     SELECT fu.firm_id, 1 FROM firm_users fu WHERE fu.user_id = u.id
+   ) x ORDER BY x.prio LIMIT 1) AS firm_id,
   so.id AS owner_id, so.name AS owner_name, so.internal AS owner_internal,
   ${OWNER_TYPE_SQL} AS owner_type`;
 
@@ -213,7 +221,8 @@ async function queryUserAttributes(authPool, ids) {
 
 async function queryUserFirm(authPool, userId) {
     const { rows } = await authPool.query(
-        `SELECT f.id, f.firm_name, f.firm_type, f.approval_status, f.city, f.state, f.gst_number, f.pan_number,
+        `SELECT f.id, f.firm_name, f.firm_type, f.approval_status, f.city, f.district, f.state, f.pin_code, f.office_address,
+                f.gst_number, f.pan_number, f.email AS firm_email, f.mobile AS firm_mobile,
                 CASE WHEN f.admin_user_id = $1 THEN 'admin' ELSE fu.role END AS member_role
          FROM firms f
          LEFT JOIN firm_users fu ON fu.firm_id = f.id AND fu.user_id = $1
@@ -250,13 +259,65 @@ const PAYMENT_SELECT = `
   p.plan_source,
   ai.id AS app_invoice_id, ai.invoice_number AS app_invoice_number, ai.invoice_kind AS app_invoice_kind, ai.issued_at AS app_invoice_issued_at`;
 
-const PAYMENT_JOINS = `
+/**
+ * Invoice numbers live in app_invoices (one row per purchase, shared sequence per financial year). The payment
+ * service links them three ways depending on its version: payments.app_invoice_id, app_invoices.payment_id, and
+ * (newer) app_invoices.source_kind/source_id ('payment' | 'topup' | 'storage') plus an invoice_number column copied
+ * onto user_token_topup_purchases / user_storage_addon_purchases. The newer columns may not exist yet, so we probe
+ * information_schema (cached for 60 s) and only reference columns that are present.
+ */
+const SCHEMA_TTL_MS = 60 * 1000;
+const schemaCache = new WeakMap();
+async function invoiceSchema(payPool) {
+    const hit = schemaCache.get(payPool);
+    if (hit && Date.now() - hit.at < SCHEMA_TTL_MS) return hit.value;
+    const { rows } = await payPool.query(
+        `SELECT table_name, column_name FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND ((table_name = 'app_invoices' AND column_name IN ('source_kind', 'source_id'))
+             OR (table_name IN ('user_token_topup_purchases', 'user_storage_addon_purchases') AND column_name = 'invoice_number'))`
+    );
+    const has = (t, c) => rows.some((r) => r.table_name === t && r.column_name === c);
+    const value = {
+        sourceCols: has('app_invoices', 'source_kind') && has('app_invoices', 'source_id'),
+        topupInvoiceCol: has('user_token_topup_purchases', 'invoice_number'),
+        addonInvoiceCol: has('user_storage_addon_purchases', 'invoice_number'),
+    };
+    schemaCache.set(payPool, { value, at: Date.now() });
+    return value;
+}
+
+/** LATERAL join resolving the single app invoice of plan payment `p` (alias `ai`). */
+function invoiceLateral(schema) {
+    const bySource = schema.sourceCols ? `OR (ai.source_kind = 'payment' AND ai.source_id = p.id)` : '';
+    return `
+  LEFT JOIN LATERAL (
+    SELECT ai.id, ai.invoice_number, ai.invoice_kind, ai.issued_at
+    FROM app_invoices ai
+    WHERE ai.id = p.app_invoice_id OR ai.payment_id = p.id ${bySource}
+    ORDER BY (ai.id = p.app_invoice_id) DESC, ai.issued_at DESC NULLS LAST, ai.id DESC
+    LIMIT 1
+  ) ai ON true`;
+}
+
+/** SQL expression for a pack row's invoice number (`alias` = tp | up; kind = topup | storage). */
+function packInvoiceSql(schema, alias, kind) {
+    const col = (kind === 'topup' ? schema.topupInvoiceCol : schema.addonInvoiceCol) ? `${alias}.invoice_number` : 'NULL::varchar';
+    const lookup = schema.sourceCols
+        ? `(SELECT ai.invoice_number FROM app_invoices ai WHERE ai.source_kind = '${kind}' AND ai.source_id = ${alias}.id
+            ORDER BY ai.issued_at DESC NULLS LAST, ai.id DESC LIMIT 1)`
+        : 'NULL::varchar';
+    return `COALESCE(${col}, ${lookup})`;
+}
+
+function paymentJoins(schema) {
+    return `
   LEFT JOIN user_subscriptions us ON us.id = p.subscription_id
   LEFT JOIN monthly_plans mp_direct ON mp_direct.id = p.monthly_plan_id
   LEFT JOIN subscription_plans sp_direct ON sp_direct.id = p.plan_id
   LEFT JOIN monthly_plans mp_sub ON mp_sub.id = us.monthly_plan_id
-  LEFT JOIN subscription_plans sp_sub ON sp_sub.id = us.plan_id
-  LEFT JOIN app_invoices ai ON ai.id = p.app_invoice_id OR (p.app_invoice_id IS NULL AND ai.payment_id = p.id)`;
+  LEFT JOIN subscription_plans sp_sub ON sp_sub.id = us.plan_id${invoiceLateral(schema)}`;
+}
 
 const PAID_P = `LOWER(COALESCE(p.status, '')) IN (${PAID_IN})`;
 const PURCHASE_TS = `COALESCE(p.purchase_date, p.captured_at, p.created_at)`;
@@ -264,6 +325,7 @@ const PURCHASE_TS = `COALESCE(p.purchase_date, p.captured_at, p.created_at)`;
 /** Latest paid plan payment per user + paid-transaction count. Map<user_id, row>. */
 async function queryLatestPlanPayments(payPool, ids) {
     if (!ids.length) return new Map();
+    const PAYMENT_JOINS = paymentJoins(await invoiceSchema(payPool));
     const { rows } = await payPool.query(
         `WITH counts AS (
            SELECT user_id, COUNT(*)::int AS paid_count FROM payments p
@@ -334,6 +396,7 @@ async function queryPaymentsPage(payPool, { userIds, from, to, paidOnly = true, 
         : sortBy === 'status'
             ? `LOWER(COALESCE(p.status, '')) ${dir}, ${PURCHASE_TS} DESC, p.id DESC`
             : `${PURCHASE_TS} ${dir} NULLS LAST, p.id ${dir}`;
+    const PAYMENT_JOINS = paymentJoins(await invoiceSchema(payPool));
     const countRes = await payPool.query(`SELECT COUNT(*)::int AS total FROM payments p ${whereSql}`, params);
     const listParams = [...params, limit];
     let limitSql = `LIMIT $${listParams.length}`;
@@ -347,6 +410,8 @@ async function queryPaymentsPage(payPool, { userIds, from, to, paidOnly = true, 
 
 /** Everything the Payment DB knows about one user. */
 async function queryUserPaymentHistory(payPool, userId) {
+    const schema = await invoiceSchema(payPool);
+    const PAYMENT_JOINS = paymentJoins(schema);
     const [payments, refunds, subs, topups, addons] = await Promise.all([
         payPool.query(
             `SELECT ${PAYMENT_SELECT} FROM payments p ${PAYMENT_JOINS}
@@ -376,14 +441,16 @@ async function queryUserPaymentHistory(payPool, userId) {
         ),
         payPool.query(
             `SELECT tp.id, tp.amount, tp.currency, tp.status, tp.created_at, tp.expires_at, tp.tokens_credited,
-                    tp.razorpay_payment_id, tp.razorpay_order_id, pl.name AS plan_name, tp.topup_plan_id
+                    tp.razorpay_payment_id, tp.razorpay_order_id, pl.name AS plan_name, tp.topup_plan_id,
+                    ${packInvoiceSql(schema, 'tp', 'topup')} AS invoice_number
              FROM user_token_topup_purchases tp LEFT JOIN topup_plans pl ON pl.id = tp.topup_plan_id
              WHERE tp.user_id = $1 ORDER BY tp.created_at DESC NULLS LAST, tp.id DESC`,
             [userId]
         ).catch(() => ({ rows: [] })),
         payPool.query(
             `SELECT up.id, up.amount, up.currency, up.status, up.created_at, up.expires_at, up.storage_bytes_granted,
-                    up.razorpay_payment_id, up.razorpay_order_id, ap.name AS plan_name, up.addon_plan_id
+                    up.razorpay_payment_id, up.razorpay_order_id, ap.name AS plan_name, up.addon_plan_id,
+                    ${packInvoiceSql(schema, 'up', 'storage')} AS invoice_number
              FROM user_storage_addon_purchases up LEFT JOIN addon_plans ap ON ap.id = up.addon_plan_id
              WHERE up.user_id = $1 ORDER BY up.created_at DESC NULLS LAST, up.id DESC`,
             [userId]
@@ -394,6 +461,7 @@ async function queryUserPaymentHistory(payPool, userId) {
 
 /** One plan payment (any status) that belongs to `userId`, for the PDF endpoints. */
 async function queryPaymentForUser(payPool, userId, paymentId) {
+    const PAYMENT_JOINS = paymentJoins(await invoiceSchema(payPool));
     const { rows } = await payPool.query(
         `SELECT ${PAYMENT_SELECT} FROM payments p ${PAYMENT_JOINS} WHERE p.id = $1 AND p.user_id = $2`,
         [paymentId, userId]
@@ -490,6 +558,7 @@ function serializeUserAttributes(u) {
         joined_at: iso(u.created_at),
         last_login_at: iso(u.last_login_at),
         owner_type: u.owner_type,                 // INTERNAL | OUTSOURCED | DIRECT
+        firm_id: u.firm_id || null,               // workspace the user belongs to (attribution is set per workspace when present)
         sales_owner: tracked ? { id: u.owner_id, name: u.owner_name, internal: Boolean(u.owner_internal) } : null,
         referral_code: tracked ? u.referral_code : null,
         referral: tracked ? {
@@ -498,7 +567,10 @@ function serializeUserAttributes(u) {
             label: u.referral_label || null,
             active: u.referral_code_active !== false,
             level: u.referral_level,
-            source: u.referral_source || null,
+            source: u.referral_source || null,     // SIGNUP (used the code) | ADMIN (assigned by an admin)
+            reason: u.referral_source === 'ADMIN' ? (u.referral_reason || null) : null,
+            set_at: u.referral_source === 'ADMIN' ? iso(u.referral_set_at) : null,
+            set_by_admin_id: u.referral_source === 'ADMIN' ? (u.referral_set_by ?? null) : null,
         } : null,
     };
 }
@@ -532,6 +604,7 @@ function serializePack(row, kind) {
         is_paid: isPaidStatus(row.status),
         razorpay_payment_id: row.razorpay_payment_id || null,
         razorpay_order_id: row.razorpay_order_id || null,
+        invoice_number: row.invoice_number || null,            // app_invoices (source_kind topup|storage) / copied column
         tokens_credited: row.tokens_credited != null ? Number(row.tokens_credited) : undefined,
         storage_bytes_granted: row.storage_bytes_granted != null ? Number(row.storage_bytes_granted) : undefined,
         purchase_date: iso(row.created_at),
@@ -618,6 +691,10 @@ function toCsv(lines) {
 }
 
 module.exports = {
+    invoiceSchema,
+    invoiceLateral,
+    packInvoiceSql,
+    paymentJoins,
     PAID_STATUSES,
     OWNER_TYPES,
     USER_STATUSES,

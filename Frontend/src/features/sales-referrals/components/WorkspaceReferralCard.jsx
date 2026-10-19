@@ -76,9 +76,9 @@ const WorkspaceReferralCard = ({ kind = 'tenant', id, memberCount, className = '
             </dl>
           )}
         </div>
-        {!loading && !error && data?.tenantId && (
-          <Button size="sm" onClick={() => setOpen(true)}>{viaCode ? T.change : T.set}</Button>
-        )}
+        {!loading && !error && data?.tenantId && (viaCode
+          ? <span className="text-xs text-slate-400" title={T.locked}>{T.locked}</span>
+          : <Button size="sm" onClick={() => setOpen(true)}>{T.set}</Button>)}
         {!loading && !error && data && !data.tenantId && (
           <span className="text-xs text-slate-400">{T.noWorkspace}</span>
         )}

@@ -27,6 +27,7 @@ const logger = require('../config/logger');
 const { logPortalFlow } = require('../utils/portalAdminLog');
 const svc = require('../services/salesReferralsService');
 const reports = require('../services/referralReportsService');
+const referralEmail = require('../services/referralEmailService');
 
 const LAYER = 'SALES_REFERRALS';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -121,9 +122,19 @@ const codeItemSchema = Joi.object({
   label: Joi.string().trim().max(60).allow('', null),
 });
 
+const ownerEmail = () => Joi.string().trim().lowercase().email({ tlds: { allow: false } }).max(255).allow('', null);
+const emailCodeSchema = Joi.object({
+  to: Joi.string().trim().lowercase().email({ tlds: { allow: false } }).max(255).allow('', null),
+});
+const emailOwnerSchema = Joi.object({
+  to: Joi.string().trim().lowercase().email({ tlds: { allow: false } }).max(255).allow('', null),
+  codeIds: Joi.array().items(Joi.string().trim().pattern(UUID_RE)).max(50),
+});
+
 const createOwnerSchema = Joi.object({
   name: Joi.string().trim().min(1).max(100).required(),
   internal: Joi.boolean().truthy('1', 'yes', 'true').falsy('0', 'no', 'false').required(),
+  email: ownerEmail(),
   notes: Joi.string().trim().max(1000).allow('', null),
   codes: Joi.array().items(codeItemSchema).required(),
 });
@@ -131,6 +142,7 @@ const createOwnerSchema = Joi.object({
 const updateOwnerSchema = Joi.object({
   name: Joi.string().trim().min(1).max(100).required(),
   internal: Joi.boolean().truthy('1', 'yes', 'true').falsy('0', 'no', 'false').required(),
+  email: ownerEmail(),
   notes: Joi.string().trim().max(1000).allow('', null),
 });
 
@@ -232,6 +244,42 @@ function makeControllers(pool) {
       return ok(res, data);
     } catch (err) {
       return handleError(req, res, err, 'Failed to update sales owner');
+    }
+  };
+
+  // A18 — email a code + signup link to the sales owner (templates/referral-code-email.html)
+  const emailCode = async (req, res) => {
+    const codeId = uuidParam(req, res, 'codeId');
+    if (!codeId) return undefined;
+    const { error, value } = validate(emailCodeSchema, req.body);
+    if (error) return validationFailed(req, res, error);
+    try {
+      const actor = req.user ? { id: req.user.id, name: req.user.name || req.user.email || null, email: req.user.email || null } : null;
+      const out = await referralEmail.sendReferralCodeEmail(pool, { codeId, to: value.to || null, actor });
+      if (out.error) return fail(req, res, out.error.status, out.error.code, out.error.message);
+      logPortalFlow(req, 'Sales referrals: code emailed', { layer: LAYER, summary: { codeId, code: out.data.code, to: out.data.to, status: out.data.status } });
+      return ok(res, out.data);
+    } catch (err) {
+      logger.errorWithContext('Sales referrals: code email failed', err, { requestId: req.requestId, layer: LAYER, summary: { codeId } });
+      return fail(req, res, 502, 'EMAIL_SEND_FAILED', `Could not send the email: ${err.message}`);
+    }
+  };
+
+  // A19 — ONE email with all of the owner's (active) codes + links
+  const emailOwnerCodes = async (req, res) => {
+    const ownerId = uuidParam(req, res, 'ownerId');
+    if (!ownerId) return undefined;
+    const { error, value } = validate(emailOwnerSchema, req.body);
+    if (error) return validationFailed(req, res, error);
+    try {
+      const actor = req.user ? { id: req.user.id, name: req.user.name || req.user.email || null, email: req.user.email || null } : null;
+      const out = await referralEmail.sendOwnerCodesEmail(pool, { ownerId, codeIds: value.codeIds || null, to: value.to || null, actor });
+      if (out.error) return fail(req, res, out.error.status, out.error.code, out.error.message);
+      logPortalFlow(req, 'Sales referrals: owner codes emailed', { layer: LAYER, summary: { ownerId, count: out.data.count, to: out.data.to } });
+      return ok(res, out.data);
+    } catch (err) {
+      logger.errorWithContext('Sales referrals: owner codes email failed', err, { requestId: req.requestId, layer: LAYER, summary: { ownerId } });
+      return fail(req, res, 502, 'EMAIL_SEND_FAILED', `Could not send the email: ${err.message}`);
     }
   };
 
@@ -466,6 +514,8 @@ function makeControllers(pool) {
     deactivateCode,
     activateCode,
     refreshCode,
+    emailCode,
+    emailOwnerCodes,
     suggestCodes,
     checkAvailability,
     searchCodes,

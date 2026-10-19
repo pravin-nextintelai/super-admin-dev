@@ -834,7 +834,7 @@ module.exports = (pool) => {
             const { getFirmApprovalEmailTemplate } = require('../utils/emailTemplates');
             const sendEmail = require('../utils/sendEmail');
             const emailFirmData = { ...firm, email: recipientEmail };
-            const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://ailearn.co.in';
+            const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://jurinex-dev.netlify.app';
             const setPasswordUrl = `${frontendUrl}/set-password?email=${encodeURIComponent(recipientEmail)}`;
             const emailHtml = getFirmApprovalEmailTemplate(emailFirmData);
 
@@ -941,7 +941,7 @@ module.exports = (pool) => {
       const { getFirmApprovalEmailTemplate } = require('../utils/emailTemplates');
       const sendEmail = require('../utils/sendEmail');
       const emailFirmData = { ...firm, email: recipientEmail };
-      const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://ailearn.co.in';
+      const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://jurinex-dev.netlify.app';
       const setPasswordUrl = `${frontendUrl}/set-password?email=${encodeURIComponent(recipientEmail)}`;
 
       await sendEmail({

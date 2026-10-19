@@ -18,6 +18,8 @@ export const SALES_REFERRALS_ENDPOINTS = Object.freeze({
   deactivate: (codeId) => `${BASE}/codes/${encodeURIComponent(codeId)}/deactivate`,  // A6
   activate: (codeId) => `${BASE}/codes/${encodeURIComponent(codeId)}/activate`,      // A7
   refresh: (codeId) => `${BASE}/codes/${encodeURIComponent(codeId)}/refresh`,        // A8
+  codeEmail: (codeId) => `${BASE}/codes/${encodeURIComponent(codeId)}/email`,        // A18 send one code to email
+  ownerEmail: (ownerId) => `${BASE}/owners/${encodeURIComponent(ownerId)}/email`,    // A19 all active codes in ONE email
   suggest: `${BASE}/codes/suggest`,                                                  // A9
   availability: `${BASE}/codes/availability`,                                        // A10
   codes: `${BASE}/codes`,                                                            // A11
@@ -107,12 +109,12 @@ const E = SALES_REFERRALS_ENDPOINTS;
 
 // ── Owners (A1–A3) ────────────────────────────────────────────────────────────
 /** A1 → owner with its codes. */
-export const createOwner = ({ name, internal, notes, codes }) =>
-  post(E.owners, { name, internal: Boolean(internal), notes: notes || null, codes });
+export const createOwner = ({ name, internal, notes, codes, email }) =>
+  post(E.owners, { name, internal: Boolean(internal), notes: notes || null, email: email || null, codes });
 
 /** A2 → owner (A3 shape). */
-export const updateOwner = (ownerId, { name, internal, notes }) =>
-  put(E.owner(ownerId), { name, internal: Boolean(internal), notes: notes || null });
+export const updateOwner = (ownerId, { name, internal, notes, email }) =>
+  put(E.owner(ownerId), { name, internal: Boolean(internal), notes: notes || null, email: email || null });
 
 /** A3 → owner profile with all codes and `codeCounts`. */
 export const getOwner = (ownerId) => get(E.owner(ownerId));
@@ -128,6 +130,10 @@ export const deactivateCode = (codeId) => post(E.deactivate(codeId));
 export const activateCode = (codeId) => post(E.activate(codeId));
 /** A8 → `{ oldCode, newCode }`. */
 export const refreshCode = (codeId) => post(E.refresh(codeId));
+/** A18 — email the code + signup link. `to` optional (defaults to the owner's saved email). */
+export const emailCode = (codeId, { to } = {}) => post(E.codeEmail(codeId), { to: to || null });
+/** A19 — ONE email with all active codes (or `codeIds`) + links. `to` optional (defaults to the owner's saved email). */
+export const emailOwnerCodes = (ownerId, { to, codeIds } = {}) => post(E.ownerEmail(ownerId), { to: to || null, ...(codeIds?.length ? { codeIds } : {}) });
 
 /**
  * A9 → one available suggestion. Pass either `{ ownerName }` or `{ ownerId }`.

@@ -14,7 +14,7 @@ const getFirmApprovalEmailTemplate = (firmData) => {
   });
 
   // Get frontend URL from environment or use default
-  const frontendUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://ailearn.co.in').trim().replace(/\/$/, '');
+  const frontendUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://jurinex-dev.netlify.app').trim().replace(/\/$/, '');
   
   // Prefer firm contact email, fall back to admin login email
   const loginEmail = firmData.email || firmData.admin_email || '';
