@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { activateCode, deactivateCode } from '../services/salesReferrals.api';
+import { activateCode, deactivateCode } from '../referralApi';
 import { errorText, toast } from '../utils/salesReferrals.utils';
 import Dialog from '../components/Dialog';
 import { Button, CodeText } from '../components/primitives';

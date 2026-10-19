@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Copy, Mail, Trash2 } from 'lucide-react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { createOwner, emailOwnerCodes, suggestCode } from '../services/salesReferrals.api';
+import { createOwner, emailOwnerCodes, suggestCode } from '../referralApi';
 import { allLinksMessage, copyText, errorText, MAX_CODES_PER_CREATE, normalizeCode, toast } from '../utils/salesReferrals.utils';
 import { salesReferralsPath } from '../salesReferrals.routes';
 import Dialog from '../components/Dialog';

@@ -2,14 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Link2, Search, X } from 'lucide-react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { getSignups } from '../services/salesReferrals.api';
+import { getSignups } from '../referralApi';
 import { copyText, errorText, fmtDate, fmtNum, pct, referralLink } from '../utils/salesReferrals.utils';
 import { useDateRangeFilter } from '../hooks/useDateRangeFilter';
 import { salesReferralsPath } from '../salesReferrals.routes';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { Avatar, Breadcrumb, Button, CodeStatusBadge, CodeText, ErrorState, IconButton, LabelBadge, PageSkeleton, PlanStatusBadge, TypeBadge } from '../components/primitives';
 import { inputClass } from '../components/formClasses';
-import { createDebugLogger } from '../../../utils/debugLogger';
+import { createDebugLogger } from '../../../shared/utils/debugLogger';
 
 const T = SALES_REFERRALS_TEXT.signups;
 const S = SALES_REFERRALS_TEXT.share;

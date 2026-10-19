@@ -9,7 +9,7 @@ import {
   Square,
   Volume2,
 } from 'lucide-react';
-import { getVoiceAgentLiveTestUrl } from '../../api/jurinexVoiceApi';
+import { getVoiceAgentLiveTestUrl } from '../../voiceApi';
 import { deriveWelcomeMessage, getModelMeta, getVoiceMeta } from './agentBuilderUtils';
 
 const INPUT_SAMPLE_RATE = 16000;

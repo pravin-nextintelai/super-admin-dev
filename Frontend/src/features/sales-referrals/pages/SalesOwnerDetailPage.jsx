@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BadgeCheck, CircleDashed, Clock, Copy, Eye, Link2, LinkIcon, Mail, Pencil, Plus, Power, RefreshCw, Users, Tag } from 'lucide-react';
-import { KpiCard } from '../../../pages/dashboard/userAnalytics/AnalyticsCharts';
+import { KpiCard } from '../../users/userAnalytics/AnalyticsCharts';
 import { SALES_REFERRALS_TEXT, SALES_REFERRALS_TOOLTIPS } from '../constants/salesReferrals.text';
-import { getOwner, getOwnerCodesReport, getOwnersReport } from '../services/salesReferrals.api';
+import { getOwner, getOwnerCodesReport, getOwnersReport } from '../referralApi';
 import { copyText, errorText, fmtDate, fmtNum, referralLink, referralLinks } from '../utils/salesReferrals.utils';
 import { useDateRangeFilter } from '../hooks/useDateRangeFilter';
 import { salesReferralsPath } from '../salesReferrals.routes';
@@ -16,7 +16,7 @@ import RefreshCodeDialog from '../dialogs/RefreshCodeDialog';
 import CodeStatusDialog from '../dialogs/CodeStatusDialog';
 import SendCodeEmailDialog from '../dialogs/SendCodeEmailDialog';
 import { Avatar, Breadcrumb, Button, CodeStatusBadge, CodeText, ErrorState, MixBar, NewBadge, PageSkeleton, PaidPctBar, TypeBadge } from '../components/primitives';
-import { createDebugLogger } from '../../../utils/debugLogger';
+import { createDebugLogger } from '../../../shared/utils/debugLogger';
 
 const T = SALES_REFERRALS_TEXT.owner;
 const C = SALES_REFERRALS_TEXT.common;

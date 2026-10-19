@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { addCode, suggestCode } from '../services/salesReferrals.api';
+import { addCode, suggestCode } from '../referralApi';
 import { errorText, normalizeCode, toast } from '../utils/salesReferrals.utils';
 import Dialog from '../components/Dialog';
 import CodeField from '../components/CodeField';

@@ -15,7 +15,7 @@ import {
   User,
   Video,
 } from 'lucide-react';
-import { listCalendarBookings, getCalendarSlots } from '../api/jurinexVoiceApi';
+import { listCalendarBookings, getCalendarSlots } from '../voiceApi';
 
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
 

@@ -5,7 +5,7 @@ import {
   listVoiceModelPricing,
   listVoiceDocuments,
   updateVoiceAgentConfiguration,
-} from '../../api/jurinexVoiceApi';
+} from '../../voiceApi';
 import { logVoiceBuilderFlow } from '../../utils/voiceDataflowLogger';
 import AgentBuilderHeader from './AgentBuilderHeader';
 import AgentPromptPanel from './AgentPromptPanel';

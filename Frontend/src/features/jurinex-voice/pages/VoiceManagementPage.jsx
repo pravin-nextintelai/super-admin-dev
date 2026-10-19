@@ -9,7 +9,7 @@ import VoiceAnalytics from '../components/VoiceAnalytics';
 import VoiceCallHistory from '../components/VoiceCallHistory';
 import VoiceCalendarBookings from '../components/VoiceCalendarBookings';
 import VoiceCallScheduler from '../components/VoiceCallScheduler';
-import { listVoiceAgents } from '../api/jurinexVoiceApi';
+import { listVoiceAgents } from '../voiceApi';
 
 const TABS = [
   { key: 'analytics', label: 'Analytics', Icon: BarChart3 },

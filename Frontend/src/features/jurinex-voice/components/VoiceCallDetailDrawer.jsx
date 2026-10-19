@@ -28,7 +28,7 @@ import {
   shortCallId,
   titleize,
 } from './voiceCallUtils';
-import { getVoiceCallRecordingUrl } from '../api/jurinexVoiceApi';
+import { getVoiceCallRecordingUrl } from '../voiceApi';
 
 const tabs = ['Transcription', 'Data', 'Detail Logs', 'Packet Capture'];
 

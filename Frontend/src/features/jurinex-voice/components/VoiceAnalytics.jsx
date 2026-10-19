@@ -17,7 +17,7 @@ import {
   YAxis,
 } from 'recharts';
 import { Calendar, Filter, RefreshCw, RotateCcw, BarChart3 } from 'lucide-react';
-import { getVoiceCallAnalytics } from '../api/jurinexVoiceApi';
+import { getVoiceCallAnalytics } from '../voiceApi';
 import {
   COLORS,
   formatDateLabel,

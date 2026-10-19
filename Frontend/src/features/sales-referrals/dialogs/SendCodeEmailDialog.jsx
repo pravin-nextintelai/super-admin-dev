@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Mail } from 'lucide-react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { emailCode, emailOwnerCodes } from '../services/salesReferrals.api';
+import { emailCode, emailOwnerCodes } from '../referralApi';
 import { errorText, fmtDate, referralLink, toast } from '../utils/salesReferrals.utils';
 import Dialog from '../components/Dialog';
 import { Button, CodeStatusBadge, CodeText, Field } from '../components/primitives';

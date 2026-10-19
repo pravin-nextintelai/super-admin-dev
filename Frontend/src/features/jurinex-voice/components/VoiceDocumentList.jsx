@@ -17,7 +17,7 @@ import {
   getVoiceDocument,
   deleteVoiceDocument,
   reindexVoiceDocument,
-} from '../api/jurinexVoiceApi';
+} from '../voiceApi';
 
 const STATUS_META = {
   processing: { label: 'Processing', cls: 'bg-blue-100 text-blue-700 border-blue-200', Icon: Clock },

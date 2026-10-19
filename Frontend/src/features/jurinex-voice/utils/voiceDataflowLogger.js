@@ -1,5 +1,5 @@
-import { createDebugLogger } from '../../../utils/debugLogger';
-import { recordVoiceDebugEvent } from '../api/jurinexVoiceApi';
+import { createDebugLogger } from '../../../shared/utils/debugLogger';
+import { recordVoiceDebugEvent } from '../voiceApi';
 
 const logger = createDebugLogger('JURINEX_VOICE_BUILDER');
 

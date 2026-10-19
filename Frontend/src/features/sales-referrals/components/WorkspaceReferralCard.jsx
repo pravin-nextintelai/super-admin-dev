@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Ticket } from 'lucide-react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { getTenantReferral, getUserReferral } from '../services/salesReferrals.api';
+import { getTenantReferral, getUserReferral } from '../referralApi';
 import { errorText, fmtDateTime } from '../utils/salesReferrals.utils';
 import { salesReferralsPath } from '../salesReferrals.routes';
 import SetWorkspaceReferralDialog from '../dialogs/SetWorkspaceReferralDialog';

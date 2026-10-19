@@ -9,7 +9,7 @@ import {
   Search,
   Settings2,
 } from 'lucide-react';
-import { getVoiceCall, listVoiceCallHistory } from '../api/jurinexVoiceApi';
+import { getVoiceCall, listVoiceCallHistory } from '../voiceApi';
 import VoiceCallDetailDrawer from './VoiceCallDetailDrawer';
 import {
   downloadCsv,

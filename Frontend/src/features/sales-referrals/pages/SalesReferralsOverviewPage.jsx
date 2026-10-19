@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpDown, ChevronDown, ChevronUp, Plus, Search, Table2, Ticket, UserMinus, Users, X, BadgeCheck, Clock, CircleDashed, RefreshCw } from 'lucide-react';
-import { KpiCard } from '../../../pages/dashboard/userAnalytics/AnalyticsCharts';
+import { KpiCard } from '../../users/userAnalytics/AnalyticsCharts';
 import { SALES_REFERRALS_TEXT, SALES_REFERRALS_TOOLTIPS } from '../constants/salesReferrals.text';
 import { REFERRAL_DATA_TEXT } from '../constants/referralData.text';
 import { OWNER_TYPE_FILTER } from '../types/salesReferrals.types';
-import { getOwnersReport, getSummary } from '../services/salesReferrals.api';
+import { getOwnersReport, getSummary } from '../referralApi';
 import { errorText, fmtDate, fmtNum, pct } from '../utils/salesReferrals.utils';
 import { useDateRangeFilter } from '../hooks/useDateRangeFilter';
 import { salesReferralsPath } from '../salesReferrals.routes';
@@ -13,7 +13,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import NewOwnerDialog from '../dialogs/NewOwnerDialog';
 import { Avatar, Button, EmptyState, ErrorState, MixBar, PageSkeleton, PaidPctBar, SegmentedControl, TypeBadge } from '../components/primitives';
 import { inputClass } from '../components/formClasses';
-import { createDebugLogger } from '../../../utils/debugLogger';
+import { createDebugLogger } from '../../../shared/utils/debugLogger';
 
 const T = SALES_REFERRALS_TEXT.overview;
 const TIP = SALES_REFERRALS_TOOLTIPS;

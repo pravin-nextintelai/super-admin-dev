@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { checkCodeAvailable } from '../services/salesReferrals.api';
+import { checkCodeAvailable } from '../referralApi';
 import { CODE_AVAILABILITY } from '../types/salesReferrals.types';
 import { CODE_FORMAT_ERRORS } from '../constants/salesReferrals.text';
 import { codeFormatError, errorText, normalizeCode } from '../utils/salesReferrals.utils';

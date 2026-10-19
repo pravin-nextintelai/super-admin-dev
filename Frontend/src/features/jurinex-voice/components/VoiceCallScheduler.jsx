@@ -22,7 +22,7 @@ import {
   listScheduledCalls,
   resetStuckScheduledCalls,
   retryScheduledCall,
-} from '../api/jurinexVoiceApi';
+} from '../voiceApi';
 
 // A row is "stuck" when the runtime claimed it (queued/in_progress)
 // but hasn't updated it within this many minutes. After this window

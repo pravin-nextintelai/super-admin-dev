@@ -1,5 +1,5 @@
 import Swal from 'sweetalert2';
-import { CUSTOMER_APP_URLS } from '../../../config';
+import { CUSTOMER_APP_URLS } from '../../../config/config';
 import withReactContent from 'sweetalert2-react-content';
 import { PLAN_STATUS } from '../types/salesReferrals.types';
 import { SALES_REFERRALS_TEXT, CODE_FORMAT_ERRORS, SALES_REFERRALS_ERROR_MESSAGES } from '../constants/salesReferrals.text';

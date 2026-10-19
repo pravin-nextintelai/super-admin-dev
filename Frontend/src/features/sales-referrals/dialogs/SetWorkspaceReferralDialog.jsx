@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { listCodes, setTenantReferral } from '../services/salesReferrals.api';
+import { listCodes, setTenantReferral } from '../referralApi';
 import { errorText, REASON_MAX, REASON_MIN, toast } from '../utils/salesReferrals.utils';
 import Dialog from '../components/Dialog';
 import { Button, Callout, CodeStatusBadge, Field, Spinner, TypeBadge } from '../components/primitives';

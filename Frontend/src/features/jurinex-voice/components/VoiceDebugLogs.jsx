@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, RefreshCw } from 'lucide-react';
-import { listVoiceDebugEvents } from '../api/jurinexVoiceApi';
+import { listVoiceDebugEvents } from '../voiceApi';
 
 const TYPE_COLOR = {
   upload_started: 'bg-blue-100 text-blue-700',

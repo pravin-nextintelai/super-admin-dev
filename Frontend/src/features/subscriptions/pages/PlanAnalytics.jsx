@@ -1,0 +1,412 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  ArrowLeft, RefreshCw, BarChart3, Repeat, Package, HardDrive, Users, CreditCard, AlertTriangle, X, Eye, Lock, DollarSign,
+} from 'lucide-react';
+import { COLORS, fmtINR, fmtNum, fmtBytes, fmtDate } from '../../users/userAnalytics/analyticsFormat';
+import { KpiCard, ChartCard, EmptyState, Donut, StatusPill } from '../../users/userAnalytics/AnalyticsCharts';
+import { fetchPlanSummary, fetchMonthlySubscribers, fetchTopupBuyers, fetchAddonBuyers } from '../../users/userAnalytics/analyticsApi';
+import { createDebugLogger } from '../../../shared/utils/debugLogger';
+
+const planAnalyticsLogger = createDebugLogger('PlanAnalytics');
+
+const TABS = [
+  { key: 'monthly', label: 'Monthly Plans', icon: Repeat },
+  { key: 'topup', label: 'Topup Plans', icon: Package },
+  { key: 'addon', label: 'Add-on Plans', icon: HardDrive },
+];
+
+const Skeleton = () => (
+  <div className="space-y-4 animate-pulse">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{[...Array(3)].map((_, i) => <div key={i} className="h-24 bg-slate-100 rounded-xl" />)}</div>
+    <div className="h-64 bg-slate-100 rounded-xl" />
+  </div>
+);
+
+const PlanAnalytics = () => {
+  const navigate = useNavigate();
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [tab, setTab] = useState('monthly');
+  const [sel, setSel] = useState(null);          // { type, id, name }
+  const [rows, setRows] = useState([]);
+  const [rowsLoading, setRowsLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null);
+    const startedAt = Date.now();
+    planAnalyticsLogger.event('summary:load:start', {
+      role: localStorage.getItem('userRole'),
+    });
+    try {
+      const r = await fetchPlanSummary();
+      setSummary(r.data);
+      const totals = r.data?.totals || {};
+      planAnalyticsLogger.flow('summary:load:success', {
+        summary: {
+          role: localStorage.getItem('userRole'),
+          paid_users: totals.paid_users,
+          total_income: totals.total_income,
+          total_subscriptions: totals.total_subscriptions,
+        },
+        output: totals,
+        table: (r.data?.monthly || []).slice(0, 8).map((m) => ({
+          id: m.id,
+          name: m.name,
+          subscribers: m.subscribers,
+          paid_users: m.paid_users,
+          revenue: m.revenue,
+        })),
+        metrics: { durationMs: Date.now() - startedAt },
+      });
+    } catch (e) {
+      planAnalyticsLogger.error('summary:load:failed', e, {
+        summary: { role: localStorage.getItem('userRole') },
+      });
+      setErr(e.message || 'Failed to load');
+    }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const openPlan = async (type, plan) => {
+    if (plan.is_custom) return;
+    setSel({ type, id: plan.id, name: plan.name }); setRows([]); setRowsLoading(true);
+    planAnalyticsLogger.event('plan:drill-in', { type, id: plan.id, name: plan.name });
+    try {
+      const r = type === 'monthly' ? await fetchMonthlySubscribers(plan.id)
+        : type === 'addon' ? await fetchAddonBuyers(plan.id)
+        : await fetchTopupBuyers(plan.id);
+      const list = Array.isArray(r.data) ? r.data : [];
+      setRows(list);
+      planAnalyticsLogger.flow('plan:drill-in:success', {
+        summary: { type, id: plan.id, name: plan.name, rowCount: list.length },
+        table: list.slice(0, 8).map((row) => ({
+          user_id: row.user_id,
+          email: row.email,
+          status: row.status,
+          amount: row.amount,
+        })),
+      });
+    } catch (e) {
+      planAnalyticsLogger.error('plan:drill-in:failed', e, {
+        summary: { type, id: plan.id, name: plan.name },
+      });
+      setRows([]);
+    } finally { setRowsLoading(false); }
+  };
+  const closePanel = () => { setSel(null); setRows([]); };
+
+  const monthly = summary?.monthly || [];
+  const topup = summary?.topup || [];
+  const addonInfo = summary?.addons || {};
+  const addonPlans = addonInfo.plans || [];
+  const totals = summary?.totals || {};
+
+  const UserCell = ({ r }) => (
+    <div className="flex flex-col">
+      <span className="font-medium text-slate-700 flex items-center gap-1.5">
+        {r.username || `User #${r.user_id}`}
+        {r.is_blocked && <Lock className="w-3 h-3 text-red-500" />}
+      </span>
+      {r.email && <span className="text-xs text-slate-400">{r.email}</span>}
+    </div>
+  );
+  const ViewBtn = ({ id }) => (
+    <button onClick={() => navigate(`/dashboard/users/${id}/analytics`)}
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors">
+      <Eye className="w-3 h-3" /> Analytics
+    </button>
+  );
+
+  // Drill-in panel for the selected plan's users.
+  const Panel = () => {
+    if (!sel || sel.type !== tab) return null;
+    const isMonthly = sel.type === 'monthly';
+    const isAddon = sel.type === 'addon';
+    return (
+      <ChartCard compact
+        title={`${isMonthly ? 'Subscribers' : 'Buyers'} — ${sel.name}`}
+        subtitle={rowsLoading ? 'Loading…' : `${rows.length} ${isMonthly ? 'subscriber' : 'buyer'}${rows.length !== 1 ? 's' : ''}`}
+        right={<button onClick={closePanel} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"><X className="w-4 h-4" /></button>}>
+        {rowsLoading ? <EmptyState icon={Users} text="Loading…" />
+          : rows.length === 0 ? <EmptyState icon={Users} text={`No ${isMonthly ? 'subscribers' : 'buyers'} yet.`} />
+          : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead><tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                  <th className="px-3 py-2 text-left">User</th>
+                  {isMonthly
+                    ? <><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">Joined</th><th className="px-3 py-2 text-right">Plan balance</th><th className="px-3 py-2 text-right">Top-up balance</th></>
+                    : isAddon
+                    ? <><th className="px-3 py-2 text-left">Purchased</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">Storage</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">Expires</th></>
+                    : <><th className="px-3 py-2 text-left">Purchased</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">Tokens</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">Expires</th></>}
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr></thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={`${r.user_id}-${i}`} className="border-b border-slate-100 hover:bg-blue-50/40">
+                      <td className="px-3 py-2"><UserCell r={r} /></td>
+                      {isMonthly ? (
+                        <>
+                          <td className="px-3 py-2"><StatusPill status={r.status} /></td>
+                          <td className="px-3 py-2 text-slate-600">{fmtDate(r.created_at || r.start_date)}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{fmtNum(r.current_token_balance)}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{fmtNum(r.topup_token_balance)}</td>
+                        </>
+                      ) : isAddon ? (
+                        <>
+                          <td className="px-3 py-2 text-slate-600">{fmtDate(r.created_at)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-800">{fmtINR(r.amount)} {r.currency || ''}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{fmtBytes(r.storage_bytes_granted)}</td>
+                          <td className="px-3 py-2"><StatusPill status={r.status} /></td>
+                          <td className="px-3 py-2 text-slate-600">{fmtDate(r.expires_at)}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-2 text-slate-600">{fmtDate(r.created_at)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-800">{fmtINR(r.amount)} {r.currency || ''}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{fmtNum(r.tokens_credited)}</td>
+                          <td className="px-3 py-2"><StatusPill status={r.status} /></td>
+                          <td className="px-3 py-2 text-slate-600">{fmtDate(r.expires_at)}</td>
+                        </>
+                      )}
+                      <td className="px-3 py-2 text-right"><ViewBtn id={r.user_id} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </ChartCard>
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button onClick={() => navigate('/dashboard/subscriptions')} className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-blue-600 transition-colors shrink-0"><ArrowLeft className="w-4 h-4" /></button>
+          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm shrink-0"><BarChart3 className="w-4 h-4 text-white" /></div>
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold text-slate-800 leading-tight">Plan Analytics</h1>
+            <p className="text-xs text-slate-500">Subscriptions, paid users, and income — click a plan to see its users.</p>
+          </div>
+        </div>
+        <button onClick={load} className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors">
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </button>
+      </div>
+
+      {err ? (
+        <div className="flex flex-col items-center gap-3 py-20 text-slate-400">
+          <AlertTriangle className="w-10 h-10 opacity-40" />
+          <p className="text-sm">{err}</p>
+          <button onClick={load} className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700">Retry</button>
+        </div>
+      ) : loading ? <Skeleton /> : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KpiCard icon={Users} tone="slate" label="Total subscriptions" value={fmtNum(totals.total_subscriptions)} />
+            <KpiCard icon={Users} tone="emerald" label="Paid users" value={fmtNum(totals.paid_users)} sub={`${fmtNum(totals.active_subscribers)} active subscribers`} />
+            <KpiCard icon={CreditCard} tone="blue" label="Plan revenue" value={fmtINR(totals.monthly_revenue)} sub={`${fmtNum(totals.monthly_paid_users)} paid plan users`} />
+            <KpiCard
+              icon={DollarSign}
+              tone="violet"
+              label="Total income"
+              value={fmtINR(totals.total_income)}
+              sub={`${fmtINR(totals.topup_revenue)} topup · ${fmtINR(totals.addon_revenue)} add-on`}
+            />
+          </div>
+
+          {/* Tabs */}
+          <div className="flex items-center gap-1 border-b border-slate-200">
+            {TABS.map((t) => {
+              const active = tab === t.key;
+              const count = t.key === 'monthly' ? monthly.length : t.key === 'topup' ? topup.length : addonPlans.length;
+              return (
+                <button key={t.key} onClick={() => { setTab(t.key); setSel(null); }}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${active ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                  <t.icon className="w-4 h-4" /> {t.label}
+                  <span className={`px-1.5 py-0.5 rounded-md text-[11px] ${active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ── MONTHLY ── */}
+          {tab === 'monthly' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <KpiCard icon={Repeat} tone="blue" label="Monthly plans" value={fmtNum(monthly.length)} />
+                <KpiCard icon={Users} tone="emerald" label="Active subscribers" value={fmtNum(monthly.reduce((s, m) => s + (m.active_subscribers || 0), 0))} />
+                <KpiCard icon={Users} tone="slate" label="Total subscriptions" value={fmtNum(monthly.reduce((s, m) => s + (m.subscribers || 0), 0))} />
+              </div>
+              <ChartCard compact title="Subscribers per monthly plan">
+                {monthly.every((m) => !m.subscribers) ? <EmptyState icon={Users} text="No subscribers yet." /> : (
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={monthly} margin={{ left: 8, right: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(v) => fmtNum(v)} />
+                        <Bar dataKey="subscribers" fill={COLORS[0]} radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </ChartCard>
+              <ChartCard compact title="Monthly plans" subtitle="Click a plan to see its subscribers">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead><tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                      <th className="px-3 py-2 text-left">Plan</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Price</th><th className="px-3 py-2 text-right">Subscribers</th><th className="px-3 py-2 text-right">Active</th><th className="px-3 py-2 text-right">Paid users</th><th className="px-3 py-2 text-right">Revenue</th>
+                    </tr></thead>
+                    <tbody>
+                      {monthly.map((m) => (
+                        <tr key={m.id} onClick={() => openPlan('monthly', m)}
+                          className={`border-b border-slate-100 cursor-pointer ${sel?.type === 'monthly' && sel.id === m.id ? 'bg-blue-50/60' : 'hover:bg-blue-50/40'}`}>
+                          <td className="px-3 py-2 font-medium text-slate-700">{m.name}{m.is_custom && <span className="ml-1 text-[10px] text-amber-600">(custom)</span>}</td>
+                          <td className="px-3 py-2 capitalize text-slate-500">{m.category || '—'}</td>
+                          <td className="px-3 py-2 text-right text-slate-600">{Number(m.price) > 0 ? fmtINR(m.price) : 'Free'}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-800">{fmtNum(m.subscribers)}</td>
+                          <td className="px-3 py-2 text-right text-emerald-700">{fmtNum(m.active_subscribers)}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{fmtNum(m.paid_users)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-emerald-700">{Number(m.revenue) > 0 ? fmtINR(m.revenue) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </ChartCard>
+              <Panel />
+            </div>
+          )}
+
+          {/* ── TOPUP ── */}
+          {tab === 'topup' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <KpiCard icon={Package} tone="amber" label="Topup plans" value={fmtNum(topup.length)} />
+                <KpiCard icon={CreditCard} tone="emerald" label="Total purchases" value={fmtNum(topup.reduce((s, t) => s + (t.purchases || 0), 0))} />
+                <KpiCard icon={CreditCard} tone="violet" label="Topup revenue" value={fmtINR(topup.reduce((s, t) => s + Number(t.revenue || 0), 0))} />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <ChartCard compact title="Purchases per topup plan">
+                  {topup.every((t) => !t.purchases) ? <EmptyState icon={Package} text="No purchases yet." /> : (
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={topup} margin={{ left: 8, right: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                          <Tooltip formatter={(v) => fmtNum(v)} />
+                          <Bar dataKey="purchases" fill={COLORS[4]} radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </ChartCard>
+                <ChartCard compact title="Revenue by topup plan"><Donut data={topup.map((t) => ({ name: t.name, value: Number(t.revenue || 0) }))} valueFormatter={(v) => fmtINR(v)} /></ChartCard>
+              </div>
+              <ChartCard compact title="Topup plans" subtitle="Click a plan to see its buyers">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead><tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                      <th className="px-3 py-2 text-left">Pack</th><th className="px-3 py-2 text-right">Price</th><th className="px-3 py-2 text-right">Tokens</th><th className="px-3 py-2 text-right">Buyers</th><th className="px-3 py-2 text-right">Purchases</th><th className="px-3 py-2 text-right">Revenue</th>
+                    </tr></thead>
+                    <tbody>
+                      {topup.map((t) => (
+                        <tr key={t.id} onClick={() => openPlan('topup', t)}
+                          className={`border-b border-slate-100 cursor-pointer ${sel?.type === 'topup' && sel.id === t.id ? 'bg-amber-50/60' : 'hover:bg-amber-50/40'}`}>
+                          <td className="px-3 py-2 font-medium text-slate-700">{t.name}</td>
+                          <td className="px-3 py-2 text-right text-slate-600">{fmtINR(t.price)}</td>
+                          <td className="px-3 py-2 text-right text-slate-600">{fmtNum(t.tokens)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-800">{fmtNum(t.buyers)}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{fmtNum(t.purchases)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-emerald-700">{fmtINR(t.revenue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </ChartCard>
+              <Panel />
+            </div>
+          )}
+
+          {/* ── ADD-ON ── */}
+          {tab === 'addon' && (
+            <div className="space-y-3">
+              {!addonInfo.tracked && (
+                <div className="flex items-start gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>Add-on purchase data is unavailable right now — showing the catalog without buyer counts.</span>
+                </div>
+              )}
+              {addonInfo.unmatched && addonInfo.unmatched.purchases > 0 && (
+                <div className="flex items-start gap-2 px-4 py-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-slate-400" />
+                  <span>{fmtNum(addonInfo.unmatched.purchases)} purchase{addonInfo.unmatched.purchases !== 1 ? 's' : ''} ({addonInfo.unmatched.buyers} user{addonInfo.unmatched.buyers !== 1 ? 's' : ''}, {fmtINR(addonInfo.unmatched.revenue)}) reference an add-on plan no longer in the catalog — not attributed below.</span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <KpiCard icon={HardDrive} tone="cyan" label="Add-on plans" value={fmtNum(addonPlans.length)} sub={addonInfo.totals?.buyers != null ? `${fmtNum(addonInfo.totals.buyers)} buyer${addonInfo.totals.buyers !== 1 ? 's' : ''}` : undefined} />
+                <KpiCard icon={CreditCard} tone="emerald" label="Total purchases" value={fmtNum(addonInfo.totals?.purchases ?? addonPlans.reduce((s, a) => s + (a.purchases || 0), 0))} />
+                <KpiCard icon={CreditCard} tone="violet" label="Add-on revenue" value={fmtINR(addonInfo.totals?.revenue ?? addonPlans.reduce((s, a) => s + Number(a.revenue || 0), 0))} />
+                <KpiCard icon={HardDrive} tone="blue" label="Storage sold" value={fmtBytes(addonInfo.totals?.bytes_granted ?? addonPlans.reduce((s, a) => s + Number(a.bytes_granted || 0), 0))} />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <ChartCard compact title="Purchases per add-on">
+                  {addonPlans.every((a) => !a.purchases) ? <EmptyState icon={HardDrive} text="No add-on purchases yet." /> : (
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={addonPlans} margin={{ left: 8, right: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-20} textAnchor="end" height={60} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                          <Tooltip formatter={(v) => fmtNum(v)} />
+                          <Bar dataKey="purchases" fill={COLORS[1]} radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </ChartCard>
+                <ChartCard compact title="Revenue by add-on"><Donut data={addonPlans.map((a) => ({ name: a.name, value: Number(a.revenue || 0) }))} valueFormatter={(v) => fmtINR(v)} /></ChartCard>
+              </div>
+              <ChartCard compact title="Add-on plans" subtitle="Click an add-on to see its buyers">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead><tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                      <th className="px-3 py-2 text-left">Add-on</th><th className="px-3 py-2 text-right">Price</th><th className="px-3 py-2 text-right">Storage</th><th className="px-3 py-2 text-right">Buyers</th><th className="px-3 py-2 text-right">Purchases</th><th className="px-3 py-2 text-right">Revenue</th>
+                    </tr></thead>
+                    <tbody>
+                      {addonPlans.map((a) => (
+                        <tr key={a.id} onClick={() => openPlan('addon', a)}
+                          className={`border-b border-slate-100 cursor-pointer ${sel?.type === 'addon' && sel.id === a.id ? 'bg-cyan-50/60' : 'hover:bg-cyan-50/40'}`}>
+                          <td className="px-3 py-2 font-medium text-slate-700">{a.name}</td>
+                          <td className="px-3 py-2 text-right text-slate-600">{fmtINR(a.price)}</td>
+                          <td className="px-3 py-2 text-right text-slate-600">{a.storage_gb >= 1024 ? `${a.storage_gb / 1024} TB` : `${a.storage_gb} GB`}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-800">{fmtNum(a.buyers)}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{fmtNum(a.purchases)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-emerald-700">{fmtINR(a.revenue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </ChartCard>
+              <Panel />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+export default PlanAnalytics;

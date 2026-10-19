@@ -4,7 +4,7 @@ import {
   listVoiceAgents,
   uploadVoiceDocument,
   getVoiceDocument,
-} from '../api/jurinexVoiceApi';
+} from '../voiceApi';
 
 const LANGUAGE_OPTIONS = [
   { value: '', label: 'Auto / Unknown' },

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { refreshCode } from '../services/salesReferrals.api';
+import { refreshCode } from '../referralApi';
 import { errorText, toast } from '../utils/salesReferrals.utils';
 import Dialog from '../components/Dialog';
 import ShareCodesPanel from './ShareCodesPanel';

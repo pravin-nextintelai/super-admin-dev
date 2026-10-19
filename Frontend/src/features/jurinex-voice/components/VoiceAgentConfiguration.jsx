@@ -22,7 +22,7 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
-import { getVoiceAgentConfiguration, updateVoiceAgentConfiguration } from '../api/jurinexVoiceApi';
+import { getVoiceAgentConfiguration, updateVoiceAgentConfiguration } from '../voiceApi';
 
 const VOICES = [
   { name: 'Puck', tag: 'Upbeat' },

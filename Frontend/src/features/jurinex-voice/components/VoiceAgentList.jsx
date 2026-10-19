@@ -5,7 +5,7 @@ import {
   createVoiceAgent,
   updateVoiceAgent,
   deleteVoiceAgent,
-} from '../api/jurinexVoiceApi';
+} from '../voiceApi';
 import VoiceAgentConfiguration from './VoiceAgentConfiguration';
 import { logVoiceBuilderFlow } from '../utils/voiceDataflowLogger';
 

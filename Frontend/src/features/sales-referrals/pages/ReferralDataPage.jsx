@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BadgeCheck, CircleDashed, Download, IndianRupee, Receipt, RefreshCw, Table2, Users } from 'lucide-react';
-import { KpiCard } from '../../../pages/dashboard/userAnalytics/AnalyticsCharts';
+import { KpiCard } from '../../users/userAnalytics/AnalyticsCharts';
 import { REFERRAL_DATA_TEXT, REFERRAL_DATA_TOOLTIPS } from '../constants/referralData.text';
 import { DEFAULT_REFERRAL_DATA_FILTERS, PLAN_STATUS_FILTER, REFERRAL_DATA_PAGE_SIZE } from '../types/referralData.types';
 import {
   getReferralDataOwners, getReferralDataStatusCounts, getReferralDataSummary, getReferralPayments, getReferralUsers, getUserHistory, userHistoryCsv,
-} from '../services/referralData.api';
+} from '../referralDataApi';
 import { EMPTY_RANGE, errorText, fmtNum, pct, toast } from '../utils/salesReferrals.utils';
 import { DATA_TAB, activeFilterChips, fmtInr, panelId, tabId } from '../utils/referralData.utils';
 import { downloadBlob } from '../utils/csv';
@@ -18,7 +18,7 @@ import UsersTable from '../components/referral-data/UsersTable';
 import PaymentsTable from '../components/referral-data/PaymentsTable';
 import PaginationFooter from '../components/referral-data/PaginationFooter';
 import ExportCsvDialog from '../dialogs/ExportCsvDialog';
-import { createDebugLogger } from '../../../utils/debugLogger';
+import { createDebugLogger } from '../../../shared/utils/debugLogger';
 
 const T = REFERRAL_DATA_TEXT;
 const TIP = REFERRAL_DATA_TOOLTIPS;

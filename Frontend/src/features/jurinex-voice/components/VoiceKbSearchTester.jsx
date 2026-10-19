@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Loader2 } from 'lucide-react';
-import { searchVoiceKb } from '../api/jurinexVoiceApi';
+import { searchVoiceKb } from '../voiceApi';
 
 const VoiceKbSearchTester = ({ agents = [] }) => {
   const [query, setQuery] = useState('');

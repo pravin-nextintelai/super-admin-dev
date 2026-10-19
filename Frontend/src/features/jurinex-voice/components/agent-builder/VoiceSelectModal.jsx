@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Loader2, Play, Search, Square, X } from 'lucide-react';
-import { getPlatformVoicePreview, listPlatformVoices } from '../../api/jurinexVoiceApi';
+import { getPlatformVoicePreview, listPlatformVoices } from '../../voiceApi';
 import { logVoiceBuilderFlow } from '../../utils/voiceDataflowLogger';
 import { PLATFORM_VOICES } from './agentBuilderConstants';
 

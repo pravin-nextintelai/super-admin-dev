@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SALES_REFERRALS_TEXT } from '../constants/salesReferrals.text';
-import { updateOwner } from '../services/salesReferrals.api';
+import { updateOwner } from '../referralApi';
 import { errorText, toast } from '../utils/salesReferrals.utils';
 import Dialog from '../components/Dialog';
 import { Button, Field, Switch } from '../components/primitives';

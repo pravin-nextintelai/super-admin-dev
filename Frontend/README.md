@@ -1,12 +1,25 @@
-# React + Vite
+# JuriNex Super Admin — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 18 + Vite + Tailwind. Feature-based layout; every feature owns its pages, components and API module.
 
-Currently, two official plugins are available:
+```bash
+cp .env.example .env.local   # optional overrides
+npm ci
+npm run dev                  # http://localhost:3001 (proxies /api → backend on :4000)
+npm run lint
+npm run build                # → dist/ (deployed by Netlify, see netlify.toml)
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```
+src/
+├── app/            main.jsx (entry) · App.jsx (<Routes> tree) · routes.jsx (role homes + route guards)
+├── config/         config.js — API base URL, auth headers, customer app URLs
+├── shared/         api.js (fetch helper + envelope) · components/ · utils/ (debugLogger)
+├── features/       auth · dashboard · users · finance · subscriptions · support · marketing · settings
+│                   documents · templates · ai-management · citations · judgements · jurinex-voice · sales-referrals
+│                   each: pages/ · components/ · <feature>Api.js (+ hooks/, dialogs/, utils/ where needed)
+├── assets/ · styles/ (index.css, global.css)
+tests/              (see tests/README.md)
+```
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Backend API reference: [docs/backend/API_REFERENCE.md](../docs/backend/API_REFERENCE.md). Role matrix: [docs/ADMIN_ROLES.md](../docs/ADMIN_ROLES.md).

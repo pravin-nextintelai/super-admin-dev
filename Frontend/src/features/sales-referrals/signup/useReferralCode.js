@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { checkReferralCode } from '../services/salesReferrals.api';
+import { checkReferralCode } from '../referralApi';
 import { REFERRAL_CHECK } from '../types/salesReferrals.types';
 import { CODE_MIN, normalizeCode } from '../utils/salesReferrals.utils';
 import { clearRememberedReferralCode, readRememberedReferralCode, rememberReferralCode } from './referralCodeStorage';
