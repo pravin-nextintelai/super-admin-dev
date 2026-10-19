@@ -9,12 +9,12 @@ All examples below were captured from a live run of the backend on 2026-10-08.
 Two tables, two APIs: **`error_logs`** (sections 1–6, one row per error, resolvable) and
 **`api_audit_logs`** (section 7, one row per API call with the error on the same row when it failed).
 
-- Code: [Backend/routes/errorLogRoutes.js](../Backend/routes/errorLogRoutes.js),
-  [Backend/controllers/errorLogController.js](../Backend/controllers/errorLogController.js),
-  [Backend/services/errorLogService.js](../Backend/services/errorLogService.js)
-- Audit logs: [Backend/routes/auditLogRoutes.js](../Backend/routes/auditLogRoutes.js),
-  [Backend/controllers/auditLogController.js](../Backend/controllers/auditLogController.js),
-  [Backend/services/auditLogService.js](../Backend/services/auditLogService.js)
+- Code: [Backend/src/modules/admin/errorLog.routes.js](../Backend/src/modules/admin/errorLog.routes.js),
+  [Backend/src/modules/admin/errorLog.controller.js](../Backend/src/modules/admin/errorLog.controller.js),
+  [Backend/src/modules/admin/errorLog.service.js](../Backend/src/modules/admin/errorLog.service.js)
+- Audit logs: [Backend/src/modules/admin/auditLog.routes.js](../Backend/src/modules/admin/auditLog.routes.js),
+  [Backend/src/modules/admin/auditLog.controller.js](../Backend/src/modules/admin/auditLog.controller.js),
+  [Backend/src/modules/admin/auditLog.service.js](../Backend/src/modules/admin/auditLog.service.js)
 - Tests: `npm run test:admin-api` → groups **I) Error Logs** (23 cases) and **J) Activity & Error Logs** (11 cases) in
   [Backend/tests/run_admin_api_tests.js](../Backend/tests/run_admin_api_tests.js)
 

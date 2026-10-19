@@ -17,7 +17,7 @@ and debug events, and exactly **how** chunks are produced and embedded.
 | User             | `db_user`                                                                                     |
 | Connection URL   | `postgresql://db_user:Nexintelai_43@35.200.202.69:5432/Calling_agent_DB`                      |
 | Env var          | `JURINEX_VOICE_DATABASE_URL` (in `Backend/.env`)                                              |
-| pg pool          | `Backend/modules/jurinex-voice/db/jurinexVoiceDB.js`                                          |
+| pg pool          | `Backend/src/infrastructure/database/connections/jurinexVoiceDB.js`                                          |
 
 This is the same Cloud SQL database used by the sibling
 `jurinex_call_agent` voice service. The admin module **only writes** to
@@ -32,8 +32,8 @@ call-agent tables (`customers`, `calls`, `call_messages`,
 ```bash
 cd Backend
 npm run migrate:jurinex-voice
-# → Backend/modules/jurinex-voice/db/migrate.js
-# → Backend/modules/jurinex-voice/migrations/001_jurinex_voice_init.sql
+# → Backend/database/migrations/jurinex-voice/migrate.js
+# → Backend/database/migrations/jurinex-voice/001_jurinex_voice_init.sql
 ```
 
 The migration creates `CREATE EXTENSION IF NOT EXISTS vector;` and all
@@ -52,7 +52,7 @@ PostgreSQL. They live in GCS:
 | Region           | recommended `asia-south1`                                                        |
 | Object naming    | `voice-agents/{agent_id}/documents/{document_id}/{safe_filename}`                |
 | Global docs      | `voice-agents/global/documents/{document_id}/{safe_filename}`                    |
-| Service module   | `Backend/modules/jurinex-voice/gcs/gcsStorage.service.js`                        |
+| Service module   | `Backend/src/infrastructure/storage/gcs/voiceGcsStorage.service.js`                        |
 | Required role    | `roles/storage.objectAdmin` on the bucket for the backend service account       |
 | Credentials      | `GCS_KEY_BASE64` (base64 service-account JSON) → `GOOGLE_APPLICATION_CREDENTIALS` → ADC |
 
@@ -339,7 +339,7 @@ ON CONFLICT (call_id) DO UPDATE SET
 | Document task type            | `RETRIEVAL_DOCUMENT` (when indexing chunks)                        |
 | Query task type               | `RETRIEVAL_QUERY` (when searching)                                 |
 | Batch size                    | 100 chunks per `embedContent` call                                 |
-| Module                        | `Backend/modules/jurinex-voice/kb/embeddings.js`                   |
+| Module                        | `Backend/src/modules/jurinex-voice/kb/embeddings.js`                   |
 
 > **Why `gemini-embedding-001`?** The current GOOGLE_API_KEY in `.env`
 > does not have access to `text-embedding-004` on the v1beta endpoint
@@ -410,7 +410,7 @@ sub-linear.
 | Target chunk size          | **500 tokens** (default)                         | `KB_CHUNK_TOKENS`          |
 | Overlap between chunks     | **50 tokens** (default)                          | `KB_CHUNK_OVERLAP`         |
 | Token approximation        | `Math.ceil(text.length / 4)` — char-based heuristic; no tokenizer dependency | `kb/chunking.js` `approxTokens()` |
-| Module                     | `Backend/modules/jurinex-voice/kb/chunking.js`   |                            |
+| Module                     | `Backend/src/modules/jurinex-voice/kb/chunking.js`   |                            |
 
 ### 5.1 Algorithm (high-level)
 

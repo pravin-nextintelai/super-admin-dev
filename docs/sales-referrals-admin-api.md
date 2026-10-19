@@ -901,11 +901,11 @@ All 17 APIs are implemented in this repository. Where the backend's real schema 
 
 | Layer | File |
 | --- | --- |
-| Routes | `Backend/routes/salesReferralsRoutes.js` |
-| Controller (validation, envelope, logging) | `Backend/controllers/salesReferralsController.js` |
-| Owners / codes / workspace referral | `Backend/services/salesReferralsService.js` |
-| Reports (A12–A15) | `Backend/services/referralReportsService.js` |
-| Migration (idempotent, also run at server start) | `Backend/migrations/create_sales_referrals_tables.sql`, `npm run migrate:sales-referrals` |
+| Routes | `Backend/src/modules/referrals/salesReferrals.routes.js` |
+| Controller (validation, envelope, logging) | `Backend/src/modules/referrals/salesReferrals.controller.js` |
+| Owners / codes / workspace referral | `Backend/src/modules/referrals/salesReferrals.service.js` |
+| Reports (A12–A15) | `Backend/src/modules/referrals/referralReports.service.js` |
+| Migration (idempotent, also run at server start) | `Backend/database/migrations/create_sales_referrals_tables.sql`, `npm run migrate:sales-referrals` |
 | Tests | `npm run test:admin-api` → group **K) Sales Referrals** in `Backend/tests/run_admin_api_tests.js` |
 
 ### 9.2 Differences from the draft above

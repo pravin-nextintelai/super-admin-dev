@@ -281,23 +281,23 @@ Numbers are live from Payment DB; they change as payments land.
 
 | Piece | File |
 |---|---|
-| Login + landing in logs | `Backend/controllers/authController.js` |
-| JWT + `authorize()` | `Backend/middleware/authMiddleware.js` |
-| `/api/admin/*` JWT allow-list (includes finance + marketing) | `Backend/middleware/adminAuth.middleware.js` |
-| Structured portal logs helper | `Backend/utils/portalAdminLog.js` |
-| Plan analytics + totals | `Backend/controllers/planAnalyticsController.js` |
-| Analytics route roles | `Backend/routes/planAnalyticsRoutes.js`, `userAnalyticsRoutes.js` |
-| Demo bookings | `Backend/controllers/demoController.js` |
-| Contact enquiries (admin API) | `Backend/routes/contactEnquiryRoutes.js`, `Backend/controllers/contactEnquiryController.js`, `Backend/services/contactEnquiryService.js` |
-| Contact form public intake | `Backend/routes/publicContactRoutes.js`, `Backend/middleware/publicRateLimit.middleware.js` |
-| Newsletter subscribers (admin API) | `Backend/routes/newsletterSubscriberRoutes.js`, `Backend/controllers/newsletterSubscriberController.js`, `Backend/services/newsletterSubscriberService.js` |
-| Newsletter public intake | `Backend/routes/publicNewsletterRoutes.js` (`POST /api/public/newsletter`) |
-| Newsletter table | `Backend/migrations/create_newsletter_subscribers_table.sql` (`npm run migrate:newsletter-subscribers`) |
-| Offers & events (admin API) | `Backend/routes/marketingPromoRoutes.js`, `Backend/controllers/marketingPromoController.js`, `Backend/services/marketingPromoService.js` |
-| Offers public header | `Backend/routes/publicPromoRoutes.js` (`GET /api/public/promos/header`) |
-| Contact enquiry tables + IST helpers | `Backend/migrations/create_contact_enquiries_tables.sql` (`npm run migrate:contact-enquiries`), `Backend/utils/time.js` (`formatIST`), `Backend/utils/contactEnquiryEmails.js` |
-| Role seeds | `Backend/migrations/seed_marketing_admin_role.js`, `seed_finance_admin_role.js` |
-| Test logins | `Backend/migrations/seed_marketing_and_finance_test_admins.js` |
+| Login + landing in logs | `Backend/src/modules/auth/auth.controller.js` |
+| JWT + `authorize()` | `Backend/src/shared/middleware/authenticate.js` + `authorize.js` |
+| `/api/admin/*` JWT allow-list (includes finance + marketing) | `Backend/src/shared/middleware/adminAuth.js` |
+| Structured portal logs helper | `Backend/src/shared/utils/portalAdminLog.js` |
+| Plan analytics + totals | `Backend/src/modules/billing/planAnalytics.controller.js` |
+| Analytics route roles | `Backend/src/modules/billing/planAnalytics.routes.js`, `users/userAnalytics.routes.js` |
+| Demo bookings | `Backend/src/modules/marketing/demo.controller.js` |
+| Contact enquiries (admin API) | `Backend/src/modules/marketing/contactEnquiry.routes.js`, `Backend/src/modules/marketing/contactEnquiry.controller.js`, `Backend/src/modules/marketing/contactEnquiry.service.js` |
+| Contact form public intake | `Backend/src/modules/marketing/publicContact.routes.js`, `Backend/src/shared/middleware/rateLimiter.js` |
+| Newsletter subscribers (admin API) | `Backend/src/modules/marketing/newsletterSubscriber.routes.js`, `Backend/src/modules/marketing/newsletterSubscriber.controller.js`, `Backend/src/modules/marketing/newsletterSubscriber.service.js` |
+| Newsletter public intake | `Backend/src/modules/marketing/publicNewsletter.routes.js` (`POST /api/public/newsletter`) |
+| Newsletter table | `Backend/database/migrations/create_newsletter_subscribers_table.sql` (`npm run migrate:newsletter-subscribers`) |
+| Offers & events (admin API) | `Backend/src/modules/marketing/marketingPromo.routes.js`, `Backend/src/modules/marketing/marketingPromo.controller.js`, `Backend/src/modules/marketing/marketingPromo.service.js` |
+| Offers public header | `Backend/src/modules/marketing/publicPromo.routes.js` (`GET /api/public/promos/header`) |
+| Contact enquiry tables + IST helpers | `Backend/database/migrations/create_contact_enquiries_tables.sql` (`npm run migrate:contact-enquiries`), `Backend/src/shared/utils/time.js` (`formatIST`), `Backend/src/infrastructure/email/contactEnquiryEmails.js` |
+| Role seeds | `Backend/database/seeders/seed_marketing_admin_role.js`, `seed_finance_admin_role.js` |
+| Test logins | `Backend/database/seeders/seed_marketing_and_finance_test_admins.js` |
 
 ### Frontend
 

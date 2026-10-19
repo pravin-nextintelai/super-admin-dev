@@ -4,9 +4,9 @@ Every platform user with **how they were onboarded** (self signup, internal sale
 their workspace, their current plan and their **complete subscription history** (every subscription, payment,
 token top-up and storage add-on), as JSON and as CSV.
 
-- Code: [Backend/routes/onboardedUsersRoutes.js](../Backend/routes/onboardedUsersRoutes.js),
-  [Backend/controllers/onboardedUsersController.js](../Backend/controllers/onboardedUsersController.js),
-  [Backend/services/onboardedUsersService.js](../Backend/services/onboardedUsersService.js)
+- Code: [Backend/src/modules/users/onboardedUsers.routes.js](../Backend/src/modules/users/onboardedUsers.routes.js),
+  [Backend/src/modules/users/onboardedUsers.controller.js](../Backend/src/modules/users/onboardedUsers.controller.js),
+  [Backend/src/modules/users/onboardedUsers.service.js](../Backend/src/modules/users/onboardedUsers.service.js)
 - Tests: `npm run test:admin-api` → group **L) Onboarded Users** (10 cases)
 - Read-only. Nothing here writes to any database.
 

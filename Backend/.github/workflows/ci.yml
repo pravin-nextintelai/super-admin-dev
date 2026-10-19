@@ -1,0 +1,37 @@
+name: Backend CI
+
+on:
+  push:
+    paths: ['Backend/**']
+  pull_request:
+    paths: ['Backend/**']
+
+defaults:
+  run:
+    working-directory: Backend
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Module graph loads (no DB needed)
+        run: node -e "require('./src/routes/v1'); console.log('route registry OK')"
+      - name: Pure unit tests
+        run: node tests/integration/reconciliation_matcher.test.js && node tests/integration/razorpay_client.test.js
+      # DB-backed suites (users_plans, reconciliation_service, referral_reports) need DATABASE_URL / PAYMENT_DB_URL secrets:
+      # - run: npm run test:finance
+      #   env:
+      #     DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      #     PAYMENT_DB_URL: ${{ secrets.PAYMENT_DB_URL }}
+      #     JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      - name: Docker image builds
+        run: docker build -t super-admin-backend:ci .

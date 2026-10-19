@@ -1,0 +1,11 @@
+# Module ownership — reviews are requested automatically for matching paths.
+# Replace the handles with the real GitHub users/teams.
+*                                   @pravin-nextintelai
+/src/modules/billing/               @pravin-nextintelai
+/src/modules/payments/              @pravin-nextintelai
+/src/modules/invoices/              @pravin-nextintelai
+/src/modules/referrals/             @pravin-nextintelai
+/src/modules/jurinex-voice/         @pravin-nextintelai
+/src/shared/middleware/             @pravin-nextintelai
+/database/                          @pravin-nextintelai
+/infra/                             @pravin-nextintelai

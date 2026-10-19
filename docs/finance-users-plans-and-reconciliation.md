@@ -1,5 +1,8 @@
 # Finance Admin — Users & Plans API and Razorpay Reconciliation
 
+> **Layout note (2026-10-19):** the backend was restructured into `Backend/src/`. File references below map as: `controllers/planAnalyticsController.js` → `src/modules/billing/planAnalytics.controller.js`, `services/usersPlansService.js` → `src/modules/billing/usersPlans.service.js`, `services/reconciliation*.js` + `routes/reconciliationRoutes.js` → `src/modules/payments/`, `services/razorpayClient.js` → `src/infrastructure/payments/razorpayClient.js`, `services/invoiceRenderService.js` → `src/modules/invoices/invoiceRender.service.js`, `utils/money.js` → `src/shared/utils/money.js`, `migrations/` → `database/migrations/`, `tests/` → `tests/integration/`. Every endpoint is also available under `/api/v1/…`.
+
+
 Delivered 2026-10-15 — **backend only** (per request). Node/Express + `pg` (raw SQL, as the rest of this repo). The existing React screen keeps working unchanged; §6 lists what the frontend needs to add to consume the new fields.
 
 > **Scope note.** This admin backend only *reads* the Payment DB. The Razorpay checkout, signature/webhook

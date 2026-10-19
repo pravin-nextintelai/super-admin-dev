@@ -156,7 +156,7 @@ Hiding a menu item is only cosmetic; the route guard and the API are what actual
 | --- | --- | --- |
 | Menu visibility | `Frontend/src/pages/dashboard/Sidebar.jsx` (`allMenuItems[].roles`) | Show only the links a role is allowed to use |
 | Route guard | `Frontend/src/App.jsx` (`RequireRole` + `ROLE_HOME`) | Redirect a role away from a page it cannot use, even when the URL is typed directly |
-| API authorization | `Backend/middleware/authMiddleware.js` (`protect` + `authorize([...])`) | The authoritative check — verify the JWT, load the admin, and confirm the role before reading or writing data |
+| API authorization | `Backend/src/shared/middleware/authenticate.js` + `authorize.js` (`protect` + `authorize([...])`) | The authoritative check — verify the JWT, load the admin, and confirm the role before reading or writing data |
 
 `protect` verifies the JWT and attaches the admin (id, email, normalized role, blocked flag); `authorize(['super-admin', ...])` then rejects any role outside its allow-list with `403`. When a role opens a page it may not use, the route guard redirects it to that role's home defined in `ROLE_HOME` (user-admin → User Management, account-admin → Subscription Management, finance-admin → Plan Analytics, marketing-admin → Demo Bookings, support-admin → Support).
 
@@ -180,7 +180,7 @@ Each support user is granted queue permissions that decide which ticket **scopes
 | `can_view_unassigned_tickets` | **Unassigned** — tickets waiting for assignment |
 | `can_view_closed_tickets` | **Closed** — finished tickets |
 
-Tickets link to an owner through `assigned_to_admin_id`. Being able to *see* a ticket (via team or full-queue permission) is separate from it being *assigned* to you: **Assigned To Me** counts only tickets whose owner is the logged-in user. Managers hand tickets to support users from the **Assignment Center** (`/api/support-admin/tickets/bulk-assign`) or from an individual ticket. These rules are enforced in `Backend/middleware/support/workspace.middleware.js` and `Backend/controllers/support/workspace.controller.js`.
+Tickets link to an owner through `assigned_to_admin_id`. Being able to *see* a ticket (via team or full-queue permission) is separate from it being *assigned* to you: **Assigned To Me** counts only tickets whose owner is the logged-in user. Managers hand tickets to support users from the **Assignment Center** (`/api/support-admin/tickets/bulk-assign`) or from an individual ticket. These rules are enforced in `Backend/src/modules/support/workspace.middleware.js` and `Backend/src/modules/support/workspace.controller.js`.
 
 The workspace also surfaces analytics derived from the same queue data — a super-admin monitoring view across every support admin and a per-manager drill-down — visible only to roles that can reach the workspace.
 
@@ -235,7 +235,7 @@ The main API loads several data stores during startup. Configure the connections
 | `GCS_VOICE_BUCKET` | Jurinex Voice knowledge-document bucket |
 | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Gemini embeddings, previews, and other AI features |
 
-Email, Google Calendar, Document AI, usage-cost, and voice-test variables are feature-specific. See [Jurinex Voice module documentation](Backend/modules/jurinex-voice/README.md), [Jurinex Voice data model](docs/JURINEX_VOICE_DATA_MODEL.md), and [Document AI setup](Backend/DOCUMENT_AI_SETUP.md).
+Email, Google Calendar, Document AI, usage-cost, and voice-test variables are feature-specific. See [Jurinex Voice module documentation](docs/backend/jurinex-voice/README.md), [Jurinex Voice data model](docs/JURINEX_VOICE_DATA_MODEL.md), and [Document AI setup](docs/backend/DOCUMENT_AI_SETUP.md).
 
 ### Judgment service: `judgement-service/.env`
 
@@ -505,8 +505,10 @@ The backend package's default `npm test` is a placeholder and intentionally exit
 - [Template Analyzer API reference](Template%20Analyzer%20Agent/API_DOCUMENTATION.md)
 - [Judgment storage and data flow](judgement-service/database_storing.md)
 - [Judgment search API](judgement-service/judment_api/README.md)
-- [Jurinex Voice module](Backend/modules/jurinex-voice/README.md)
+- [Jurinex Voice module](docs/backend/jurinex-voice/README.md)
 - [Jurinex Voice data model](docs/JURINEX_VOICE_DATA_MODEL.md)
 - [Jurinex Voice GCS setup](docs/JURINEX_VOICE_GCS_SETUP.md)
 - [Admin roles (Marketing / Finance, test logins, logs)](docs/ADMIN_ROLES.md)
 - [Plan limits integration](docs/PLAN_LIMITS_INTEGRATION.md)
+- [Backend API reference (every endpoint, legacy + /api/v1)](docs/backend/API_REFERENCE.md)
+- [Backend architecture](docs/backend/architecture.md) · [module ownership](docs/backend/module-ownership.md) · [database](docs/backend/database.md) · [security](docs/backend/security.md) · [deployment](docs/backend/deployment.md)

@@ -5,9 +5,9 @@ without a workspace), the sales owner and code it came through, its attribution,
 and full plan history; a "Plan purchases" view with one row per paid event; and a CSV export with
 kind / scope / column selection matching the export dialog.
 
-- Code: [Backend/routes/referralDataRoutes.js](../Backend/routes/referralDataRoutes.js),
-  [Backend/controllers/referralDataController.js](../Backend/controllers/referralDataController.js),
-  [Backend/services/referralDataService.js](../Backend/services/referralDataService.js)
+- Code: [Backend/src/modules/referrals/referralData.routes.js](../Backend/src/modules/referrals/referralData.routes.js),
+  [Backend/src/modules/referrals/referralData.controller.js](../Backend/src/modules/referrals/referralData.controller.js),
+  [Backend/src/modules/referrals/referralData.service.js](../Backend/src/modules/referrals/referralData.service.js)
   (Payment-DB access reused from `onboardedUsersService.js`)
 - Also mounted at `/api/v1/admin/sales-referrals/data`. Read-only. Roles: `super-admin`, `admin`.
 - Tests: `npm run test:admin-api` → group **M) All referral data** (8 cases)

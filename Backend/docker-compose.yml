@@ -1,0 +1,33 @@
+# Local development stack. The app connects to the PostgreSQL instances named in .env
+# (DATABASE_URL, DOCDB_URL, PAYMENT_DB_URL, …). The `postgres` service is a convenience for
+# running everything locally; point the *_URL variables at it if you don't use the shared dev DBs.
+services:
+  backend:
+    build: .
+    env_file: .env
+    environment:
+      PORT: 4000
+      NODE_ENV: development
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./src:/app/src:ro
+      - ./templates:/app/templates:ro
+      - ./database:/app/database:ro
+    command: ["node", "server.js"]
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: db_user
+      POSTGRES_PASSWORD: change_me
+      POSTGRES_DB: Auth_DB
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
